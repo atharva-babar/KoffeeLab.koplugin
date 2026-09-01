@@ -1,0 +1,116 @@
+require("koffeelab.spec_helper")
+local UIManager = require("ui/uimanager")
+local Screen = require("device").screen
+
+describe("ui/widgets", function()
+  it("Rating1to5 selects, clears and reports its value", function()
+    local Rating1to5 = require("ui/widgets/rating")
+    local seen
+    local r = Rating1to5:new {
+      on_change = function(v)
+        seen = v
+      end,
+    }
+    assert.is_nil(r:getValue())
+    r:_select(4)
+    assert.are.equal(4, r:getValue())
+    assert.are.equal(4, seen)
+    r:_select(4) -- tap again clears
+    assert.is_nil(r:getValue())
+    assert.is_nil(seen)
+
+    r:setValue(3)
+    r:paintTo(Screen.bb, 0, 0) -- must not error with a selection painted inverted
+  end)
+
+  it("FormScreen renders rows from fields and refreshes on set", function()
+    local FormScreen = require("ui/widgets/form_screen")
+    local saved = false
+    local screen = FormScreen:new {
+      title = "Form",
+      values = { title = "V60" },
+      fields = {
+        {
+          key = "title",
+          label = "Title",
+          display = function(v)
+            return v.title
+          end,
+          edit = function(form)
+            form:set("title", "AeroPress")
+          end,
+        },
+      },
+      actions = {
+        {
+          text = "Save",
+          callback = function()
+            saved = true
+          end,
+        },
+      },
+    }
+    assert.are.equal("V60", screen.item_table[1].mandatory)
+    assert.are.equal(2, #screen.item_table) -- one field + one action row
+
+    screen:onMenuChoice(screen.item_table[1]) -- runs the field editor
+    assert.are.equal("AeroPress", screen.values.title)
+    assert.are.equal("AeroPress", screen.item_table[1].mandatory)
+
+    screen:onMenuChoice(screen.item_table[2]) -- runs the action
+    assert.is_true(saved)
+
+    UIManager:show(screen)
+    screen:paintTo(Screen.bb, 0, 0)
+    UIManager:close(screen)
+  end)
+
+  it("modal helpers show and dismiss without error", function()
+    local ListPicker = require("ui/widgets/list_picker")
+    local NumberInput = require("ui/widgets/number_input")
+    local ConfirmDialog = require("ui/widgets/confirm_dialog")
+
+    local picked
+    local lp = ListPicker.show {
+      title = "Pick",
+      items = { { text = "One", value = 1 }, { text = "Two", value = 2 } },
+      current = 2,
+      on_select = function(v)
+        picked = v
+      end,
+    }
+    assert.is_true(UIManager:isWidgetShown(lp))
+    lp:onMenuChoice(lp.item_table[1])
+    assert.are.equal(1, picked)
+    assert.is_false(UIManager:isWidgetShown(lp))
+
+    local ni = NumberInput.show {
+      title = "Number",
+      value = 15,
+      min = 1,
+      max = 30,
+      step = 1,
+      unit = "clicks",
+      on_ok = function() end,
+    }
+    assert.is_true(UIManager:isWidgetShown(ni))
+    UIManager:close(ni)
+
+    local cd = ConfirmDialog.destructive {
+      text = "Delete?",
+      on_confirm = function() end,
+    }
+    assert.is_true(UIManager:isWidgetShown(cd))
+    UIManager:close(cd)
+  end)
+
+  it("Home screen builds and its overflow menu opens", function()
+    local HomeScreen = require("ui/home")
+    local home = HomeScreen:new {}
+    assert.is_not_nil(home.title_bar)
+    home:paintTo(Screen.bb, 0, 0) -- full render path: frame + titlebar + button table
+    home:onRightButton()
+    -- close whatever the overflow opened
+    UIManager:close(UIManager._window_stack[#UIManager._window_stack].widget)
+  end)
+end)

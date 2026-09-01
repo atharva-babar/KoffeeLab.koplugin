@@ -1,5 +1,5 @@
-local InfoMessage = require("ui/widget/infomessage")
-local UIManager = require("ui/uimanager")
+local HomeScreen = require("ui/home")
+local Nav = require("ui/nav")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 local logger = require("logger")
@@ -19,9 +19,7 @@ function KoffeeLab:addToMainMenu(menu_items)
     text = _("KoffeeLab"),
     sorting_hint = "tools",
     callback = function()
-      UIManager:show(InfoMessage:new {
-        text = _("KoffeeLab — coming soon"),
-      })
+      Nav:reset(HomeScreen:new {})
     end,
   }
 end
