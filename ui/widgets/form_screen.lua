@@ -50,7 +50,9 @@ end
 
 function FormScreen:_buildItems()
   local items = {}
-  for _, field in ipairs(self.fields) do
+  -- NB: do not use `_` as the loop variable here — it shadows the gettext `_`
+  -- that the `_("—")` fallback below needs.
+  for _idx, field in ipairs(self.fields) do -- luacheck: ignore _idx
     local value_str
     if field.display then
       value_str = field.display(self.values)
@@ -61,7 +63,7 @@ function FormScreen:_buildItems()
       _field = field,
     })
   end
-  for _, action in ipairs(self.actions or {}) do
+  for _idx, action in ipairs(self.actions or {}) do -- luacheck: ignore _idx
     table.insert(items, {
       text = action.text,
       mandatory = "\u{203A}", -- ›

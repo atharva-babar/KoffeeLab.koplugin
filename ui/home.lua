@@ -61,7 +61,7 @@ function HomeScreen:getContentWidget()
         {
           text = _("Configurator"),
           callback = function()
-            self:_open(_("Configurator"), _("The Configurator arrives in Phase 4."))
+            Nav:push(require("ui/configurator"):new {})
           end,
         },
       },
