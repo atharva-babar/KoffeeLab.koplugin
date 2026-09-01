@@ -1,0 +1,26 @@
+# Lua / luarocks
+*.rock
+.luarocks/
+luacov.stats.out
+luacov.report.out
+
+# Local SQLite DBs produced by specs / manual runs
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+
+# Editor / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# The KOReader emulator checkout is a sibling dir, but guard against a nested clone
+/koreader/
+
+# Local-only design/planning docs — kept on disk for reference, not part of the plugin
+/TECH_SOLUTION_KoffeeLab_KOReader.md
+/IMPLEMENTATION_PLAN.md
+/PROGRESS.md
+/docs/eink-audit.md
+/docs/acceptance-*.md

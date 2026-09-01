@@ -1,0 +1,8 @@
+column_width = 100
+line_endings = "Unix"
+indent_type = "Spaces"
+indent_width = 2
+quote_style = "AutoPreferDouble"
+# KOReader idiom: `Widget:new{ ... }` / `_("string")` — keep parens only when the
+# single argument is not a table or string literal.
+call_parentheses = "NoSingleTable"
