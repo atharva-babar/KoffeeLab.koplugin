@@ -37,7 +37,7 @@ function HomeScreen:getContentWidget()
         {
           text = _("+ Add Recipe"),
           callback = function()
-            self:_open(_("Add Recipe"), _("The Add Recipe flow arrives in Phase 5."))
+            require("ui/recipe/add_flow").start {}
           end,
         },
       },
