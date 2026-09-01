@@ -39,4 +39,22 @@ function M.teardown()
   Connection.close()
 end
 
+--- A migrated DB plus one bean and one grinder, for repo/service specs that need a
+--- recipe. Returns `ids, conn` where ids = { method_id, bean_id, grinder_id }.
+function M.recipe_ready()
+  local conn = M.migrated_connection()
+  local Config = require("db/repo/config")
+  local Method = require("db/repo/method")
+  local bean = assert(Config.beans.create { name = "Ethiopia Guji", roaster_name = "Blue Tokai" })
+  local grinder = assert(Config.grinders.create {
+    name = "Timemore C3S",
+    unit_name = "clicks",
+    min_value = 1,
+    max_value = 30,
+    step_value = 1,
+  })
+  local pour_over = assert(Method.get_by_slug("pour_over"))
+  return { method_id = pour_over.id, bean_id = bean.id, grinder_id = grinder.id }, conn
+end
+
 return M

@@ -45,6 +45,11 @@ function Connection.open(path)
   return conn
 end
 
+--- Path the cached handle is open on (":memory:" in specs), or nil when closed.
+function Connection.path()
+  return conn and not conn._closed and conn_path or nil
+end
+
 --- Close the cached connection and drop it. Safe to call when already closed.
 function Connection.close()
   if conn and not conn._closed then
@@ -58,13 +63,34 @@ local function pack(...)
   return select("#", ...), { ... }
 end
 
+local in_transaction = false
+
 --- Run `fn(conn)` inside BEGIN/COMMIT. Rolls back and returns `nil, err` when `fn`
 --- raises or returns `nil, err`; otherwise commits and returns `fn`'s results.
+--
+-- Reentrant: a nested call (e.g. a repo write invoked from inside a larger import
+-- transaction) does not open a second SQLite transaction — SQLite has none — it
+-- runs `fn` directly and lets a failure propagate so the outermost call rolls the
+-- whole batch back (§Conventions 16).
 function Connection.with_transaction(fn)
   local handle = Connection.open()
+
+  if in_transaction then
+    local n, r = pack(pcall(fn, handle))
+    if not r[1] then
+      error(r[2], 0) -- unwind to the outermost with_transaction
+    end
+    if r[2] == nil and r[3] ~= nil then
+      error(r[3], 0)
+    end
+    return unpack(r, 2, n)
+  end
+
+  in_transaction = true
   handle:exec("BEGIN")
   -- r[1] is pcall's ok flag; r[2..n] are fn's return values.
   local n, r = pack(pcall(fn, handle))
+  in_transaction = false
   if not r[1] then
     pcall(handle.exec, handle, "ROLLBACK")
     return nil, tostring(r[2])
