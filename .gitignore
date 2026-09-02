@@ -24,3 +24,4 @@ luacov.report.out
 /PROGRESS.md
 /docs/eink-audit.md
 /docs/acceptance-*.md
+/docs/*-plan.md
