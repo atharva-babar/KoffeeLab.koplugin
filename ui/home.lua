@@ -53,7 +53,7 @@ function HomeScreen:getContentWidget()
         {
           text = _("Index"),
           callback = function()
-            self:_open(_("Index"), _("The recipe / drink index arrives in Phase 6."))
+            Nav:push(require("ui/index"):new {})
           end,
         },
       },
