@@ -45,7 +45,7 @@ function HomeScreen:getContentWidget()
         {
           text = _("+ Custom Drink"),
           callback = function()
-            self:_open(_("Custom Drink"), _("Custom drinks arrive in Phase 8."))
+            require("ui/drink/add_flow").start {}
           end,
         },
       },
