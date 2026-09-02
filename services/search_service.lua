@@ -8,7 +8,7 @@ local Support = require("services/support")
 
 local SearchService = {}
 
-SearchService.RECIPE_SORTS = { "rating", "brew_count", "title", "updated" }
+SearchService.RECIPE_SORTS = { "rating", "brew_count", "title", "updated", "recent" }
 SearchService.DRINK_SORTS = { "rating", "title", "updated" }
 
 local function allowed(list, value, fallback)

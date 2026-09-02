@@ -16,11 +16,15 @@
 -- for releasing resources (DB cursors, cached rows, …).
 
 local Blitbuffer = require("ffi/blitbuffer")
+local BottomContainer = require("ui/widget/container/bottomcontainer")
 local Device = require("device")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
+local Navbar = require("ui/widgets/navbar")
+local OverlapGroup = require("ui/widget/overlapgroup")
+local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
 local TitleBar = require("ui/widget/titlebar")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -34,6 +38,11 @@ local ScreenBase = InputContainer:extend {
   -- optional titlebar right-hand icon + handler (e.g. an overflow menu)
   right_icon = nil,
   covers_fullscreen = true,
+  -- opt-in: a Navbar key ("home"|"index"|"favourites"|"configurator") pins the
+  -- bottom nav to this screen; nil = no navbar (deep screens).
+  navbar = nil,
+  -- opt-in: wrap the content in a ScrollableContainer.
+  scroll = false,
 }
 
 --- Override in a subclass that sets `right_icon`.
@@ -73,9 +82,48 @@ function ScreenBase:init()
     show_parent = self,
   }
 
-  self.content_height = self.screen_h - self.title_bar:getHeight()
+  local nav_h = self.navbar and Navbar.HEIGHT or 0
+  self.content_height = self.screen_h - self.title_bar:getHeight() - nav_h
 
   local content = self:getContentWidget() or VerticalGroup:new {}
+
+  if self.scroll then
+    self.scroll_container = ScrollableContainer:new {
+      dimen = Geom:new { w = self.screen_w, h = self.content_height },
+      show_parent = self,
+      content,
+    }
+    -- UIManager clips inner repaints/inverts against this
+    self.cropping_widget = self.scroll_container
+    content = self.scroll_container
+  end
+
+  local body = VerticalGroup:new {
+    align = "left",
+    self.title_bar,
+    content,
+  }
+
+  local root = body
+  if self.navbar then
+    self.navbar_widget = Navbar:new {
+      width = self.screen_w,
+      active = self.navbar,
+      show_parent = self,
+      on_select = function(key)
+        self:_navSelect(key)
+      end,
+    }
+    root = OverlapGroup:new {
+      dimen = Geom:new { w = self.screen_w, h = self.screen_h },
+      body,
+      BottomContainer:new {
+        dimen = Geom:new { w = self.screen_w, h = self.screen_h },
+        self.navbar_widget,
+      },
+    }
+  end
+
   self.main_frame = FrameContainer:new {
     width = self.screen_w,
     height = self.screen_h,
@@ -83,13 +131,60 @@ function ScreenBase:init()
     bordersize = 0,
     padding = 0,
     margin = 0,
-    VerticalGroup:new {
-      align = "left",
-      self.title_bar,
-      content,
-    },
+    root,
   }
   self[1] = self.main_frame
+end
+
+--- Navbar tap handler. Keep the back-stack shallow: reset to Home, then push the
+--- target so repeated navbar taps don't grow the stack.
+function ScreenBase:_navSelect(key)
+  local Nav = self.nav or require("ui/nav")
+  if key == "home" then
+    Nav:reset(require("ui/home"):new {})
+  elseif key == "index" then
+    Nav:reset(require("ui/home"):new {})
+    Nav:push(require("ui/index"):new {})
+  elseif key == "favourites" then
+    Nav:reset(require("ui/home"):new {})
+    Nav:push(require("ui/recipe/index"):new { favourites = true })
+  elseif key == "configurator" then
+    Nav:reset(require("ui/home"):new {})
+    Nav:push(require("ui/configurator"):new {})
+  elseif key == "add" then
+    self:_navAdd()
+  end
+end
+
+function ScreenBase:_navAdd()
+  local ButtonDialog = require("ui/widget/buttondialog")
+  local _ = require("gettext")
+  local dialog
+  dialog = ButtonDialog:new {
+    title = _("Add"),
+    title_align = "center",
+    buttons = {
+      {
+        {
+          text = _("+ Add Recipe"),
+          callback = function()
+            UIManager:close(dialog)
+            require("ui/recipe/add_flow").start {}
+          end,
+        },
+      },
+      {
+        {
+          text = _("+ Add Custom Drink"),
+          callback = function()
+            UIManager:close(dialog)
+            require("ui/drink/add_flow").start {}
+          end,
+        },
+      },
+    },
+  }
+  UIManager:show(dialog)
 end
 
 --- Subclasses override this to return the body widget (below the titlebar).

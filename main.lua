@@ -14,6 +14,8 @@ local KoffeeLab = WidgetContainer:extend {
 
 function KoffeeLab:init()
   logger.dbg("KoffeeLab: init")
+  -- Thread the plugin root to sub-modules before any screen is built.
+  require("ui/paths").root = self.path
   -- Open + migrate the database once per session (TECH_SOLUTION §3.3). A failure
   -- is non-fatal: the menu entry still registers and reports the error on open.
   Bootstrap.ensure()

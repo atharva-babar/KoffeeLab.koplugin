@@ -39,6 +39,7 @@ local SORT_CLAUSES = {
   brew_count = "st.brew_count DESC, r.id DESC",
   title = "r.title COLLATE NOCASE ASC, r.id ASC",
   updated = "r.updated_at DESC, r.id DESC",
+  recent = "st.last_brewed_at IS NULL, st.last_brewed_at DESC, r.id DESC",
 }
 
 local INSERT_COLS = {}
@@ -200,7 +201,7 @@ function Recipe.delete(id)
 end
 
 --- Index rows joined to recipe_stats. Active recipes only, LIKE-escaped title
---- search, one of the four documented sorts (default: updated).
+--- search, one of the documented sorts (default: updated).
 function Recipe.list_for_index(opts)
   opts = opts or {}
   local where, params = { "r.is_active = 1" }, {}

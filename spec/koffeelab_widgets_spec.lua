@@ -1,6 +1,8 @@
 require("koffeelab.spec_helper")
 local UIManager = require("ui/uimanager")
 local Screen = require("device").screen
+local Paths = require("ui/paths")
+Paths.root = "plugins/KoffeeLab.koplugin"
 
 describe("ui/widgets", function()
   it("Rating1to5 selects, clears and reports its value", function()
@@ -102,6 +104,82 @@ describe("ui/widgets", function()
     }
     assert.is_true(UIManager:isWidgetShown(cd))
     UIManager:close(cd)
+  end)
+
+  it("Card is tappable, repaints once and is inert without on_tap", function()
+    local Card = require("ui/widgets/card")
+    local TextWidget = require("ui/widget/textwidget")
+    local taps = 0
+    local card = Card:new {
+      width = 200,
+      height = 80,
+      on_tap = function()
+        taps = taps + 1
+      end,
+      TextWidget:new { text = "hi", face = require("ui/design").face("body") },
+    }
+    card:paintTo(Screen.bb, 0, 0)
+    card:onTap()
+    assert.are.equal(1, taps)
+
+    local inert = Card:new {
+      width = 200,
+      height = 80,
+      TextWidget:new { text = "x", face = require("ui/design").face("body") },
+    }
+    assert.is_nil(inert.ges_events.Tap)
+    inert:onTap() -- must not error
+  end)
+
+  it("Tile renders an icon over a label and taps", function()
+    local Tile = require("ui/widgets/tile")
+    local tapped = false
+    local tile = Tile:new {
+      width = 160,
+      height = 120,
+      icon = "add",
+      label = "Add Recipe",
+      on_tap = function()
+        tapped = true
+      end,
+    }
+    assert.are.equal("Add Recipe", tile.label)
+    tile:paintTo(Screen.bb, 0, 0)
+    tile:onTap()
+    assert.is_true(tapped)
+  end)
+
+  it("Navbar renders five cells and reports the tapped key", function()
+    local Navbar = require("ui/widgets/navbar")
+    local seen
+    local nav = Navbar:new {
+      width = 600,
+      active = "home",
+      on_select = function(key)
+        seen = key
+      end,
+    }
+    assert.are.equal(5, #nav._ranges)
+    assert.is_true(Navbar.HEIGHT > 0)
+    nav:paintTo(Screen.bb, 0, 0)
+    -- a tap near the far right lands on the last cell (configurator)
+    nav:onTap(nil, { pos = { x = 590, y = 0 } })
+    assert.are.equal("configurator", seen)
+  end)
+
+  it("plugin SVG icons resolve and paint", function()
+    local IconWidget = require("ui/widget/iconwidget")
+    for _, name in ipairs { "home", "index", "add", "favorite", "configurator", "pour_over" } do
+      local w = IconWidget:new {
+        file = Paths.icon(name),
+        width = 48,
+        height = 48,
+        is_icon = true,
+        alpha = true,
+      }
+      w:paintTo(Screen.bb, 0, 0)
+      w:free()
+    end
   end)
 
   it("Home screen builds and its overflow menu opens", function()

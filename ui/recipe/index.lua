@@ -37,6 +37,9 @@ function RecipeIndex:init()
   self.method_slug = nil
   self.search = ""
   self.sort = "updated"
+  if self.favourites then
+    self.title = _("Favourite Recipes")
+  end
   local ok, methods = MethodService.list()
   self.methods = ok and methods or {}
   self.item_table = self:_items()
@@ -84,16 +87,21 @@ function RecipeIndex:_items()
     method_slug = self.method_slug,
     search = self.search,
     sort = self.sort,
+    favorite = self.favourites or nil,
   }
   rows = ok and rows or {}
   items[#items + 1] = { text = _("Recipes"), mandatory = tostring(#rows), _head = true }
   if #rows == 0 then
     local unfiltered = self.method_slug == nil and self.search == ""
-    items[#items + 1] = {
-      text = unfiltered and _("  No recipes yet. Add one from the Home screen.")
-        or _("  No recipes match this filter."),
-      _inert = true,
-    }
+    local msg
+    if self.favourites then
+      msg = _("  No favourite recipes yet. Star a recipe from its detail screen.")
+    elseif unfiltered then
+      msg = _("  No recipes yet. Add one from the Home screen.")
+    else
+      msg = _("  No recipes match this filter.")
+    end
+    items[#items + 1] = { text = msg, _inert = true }
   end
   for _idx, r in ipairs(rows) do -- luacheck: ignore _idx
     items[#items + 1] = { text = r.title, mandatory = row_note(r), _recipe_id = r.id }
