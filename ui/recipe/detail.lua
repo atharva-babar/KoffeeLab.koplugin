@@ -139,15 +139,19 @@ function RecipeDetail:buildItems()
     items[#items + 1] = { text = m.output_note, kind = "text" }
   end
 
-  local sensory = {}
+  local has_sensory = false
   for _, axis in ipairs(Constants.SENSORY_AXES) do
     if m[axis.key] ~= nil then
-      sensory[#sensory + 1] = axis.label .. " " .. tostring(m[axis.key])
+      has_sensory = true
     end
   end
-  if #sensory > 0 then
+  if has_sensory then
     items[#items + 1] = { text = _("Sensory"), kind = "head" }
-    items[#items + 1] = { text = table.concat(sensory, "   "), kind = "text" }
+    for _, axis in ipairs(Constants.SENSORY_AXES) do
+      if m[axis.key] ~= nil then
+        items[#items + 1] = row(axis.label, Format.rating_stars(m[axis.key]))
+      end
+    end
   end
   if m.overall_rating ~= nil then
     items[#items + 1] = row(_("Overall"), Format.rating_stars(m.overall_rating))

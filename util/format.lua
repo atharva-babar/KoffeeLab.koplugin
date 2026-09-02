@@ -12,6 +12,18 @@ local STAR_FULL = "\u{2605}" -- ★
 local STAR_EMPTY = "\u{2606}" -- ☆
 local STAR_HALF = "\u{00BD}" -- ½ (appended; e-ink has no reliable half-star glyph)
 
+-- SQLite INTEGER columns arrive as int64 cdata, which fails a `type() == "number"`
+-- test; coerce so the callers can pass raw DB values straight in.
+local function to_num(v)
+  if type(v) == "number" then
+    return v
+  end
+  if type(v) == "cdata" then
+    return tonumber(v)
+  end
+  return nil
+end
+
 --- Integer seconds -> a compact duration string (§1.15):
 ---   165   -> "2:45"      (sub-hour, not a whole minute)
 ---   900   -> "15 min"    (whole minutes, sub-hour)
@@ -19,7 +31,8 @@ local STAR_HALF = "\u{00BD}" -- ½ (appended; e-ink has no reliable half-star gl
 ---   3660  -> "1:01:00"   (hours + remainder)
 --- Returns nil for nil / negative / non-number input.
 function Format.duration(sec)
-  if type(sec) ~= "number" or sec < 0 then
+  sec = to_num(sec)
+  if sec == nil or sec < 0 then
     return nil
   end
   sec = math.floor(sec + 0.5)
@@ -45,13 +58,14 @@ end
 --- "yield" (output/dose — the Espresso fallback when water_g is NULL). Returns
 --- nil when dose is missing/zero and no usable numerator exists.
 function Format.ratio(water_g, dose_g, output_weight_g)
-  if type(dose_g) ~= "number" or dose_g <= 0 then
+  water_g, dose_g, output_weight_g = to_num(water_g), to_num(dose_g), to_num(output_weight_g)
+  if dose_g == nil or dose_g <= 0 then
     return nil
   end
-  if type(water_g) == "number" and water_g >= 0 then
+  if water_g ~= nil and water_g >= 0 then
     return string.format("1 : %.1f", water_g / dose_g), "brew"
   end
-  if type(output_weight_g) == "number" and output_weight_g > 0 then
+  if output_weight_g ~= nil and output_weight_g > 0 then
     return string.format("1 : %.1f", output_weight_g / dose_g), "yield"
   end
   return nil
@@ -60,7 +74,8 @@ end
 --- Whole-number catalogue rating (§1.11): N filled + (5-N) empty stars.
 --- Returns nil for nil; clamps out-of-range input into 0..5.
 function Format.rating_stars(n)
-  if type(n) ~= "number" then
+  n = to_num(n)
+  if n == nil then
     return nil
   end
   n = math.max(0, math.min(5, math.floor(n + 0.5)))
@@ -69,7 +84,8 @@ end
 
 --- Derived session average (§1.11) as one decimal, e.g. 4.6667 -> "4.7".
 function Format.rating_decimal(x)
-  if type(x) ~= "number" then
+  x = to_num(x)
+  if x == nil then
     return nil
   end
   return string.format("%.1f", x)
@@ -78,7 +94,8 @@ end
 --- Derived session average rendered as stars with a trailing ½ when the
 --- fractional part rounds to a half, e.g. 3.7 -> "★★★★" ... 3.4 -> "★★★½".
 function Format.rating_avg_stars(x)
-  if type(x) ~= "number" then
+  x = to_num(x)
+  if x == nil then
     return nil
   end
   x = math.max(0, math.min(5, x))
@@ -96,7 +113,8 @@ end
 
 --- Roast level 1..5 -> label (§0.12); nil / out of range -> nil.
 function Format.roast_label(level)
-  if type(level) ~= "number" then
+  level = to_num(level)
+  if level == nil then
     return nil
   end
   return Constants.ROAST_LABELS[level]
@@ -105,7 +123,8 @@ end
 --- Grind value rendered with the grinder's configured unit,
 --- e.g. (15, "clicks") -> "15 clicks". Trailing ".0" is trimmed.
 function Format.grind(value, unit_name)
-  if type(value) ~= "number" then
+  value = to_num(value)
+  if value == nil then
     return nil
   end
   local num = string.format("%.2f", value):gsub("%.?0+$", "")
@@ -117,7 +136,8 @@ end
 
 --- Grams with up to one decimal, trimmed: 18 -> "18 g", 17.5 -> "17.5 g".
 function Format.grams(value)
-  if type(value) ~= "number" then
+  value = to_num(value)
+  if value == nil then
     return nil
   end
   local num = string.format("%.1f", value):gsub("%.0$", "")
@@ -126,7 +146,8 @@ end
 
 --- Temperature in °C, one decimal when needed: 93 -> "93°C", 93.5 -> "93.5°C".
 function Format.temp_c(value)
-  if type(value) ~= "number" then
+  value = to_num(value)
+  if value == nil then
     return nil
   end
   local num = string.format("%.1f", value):gsub("%.0$", "")
