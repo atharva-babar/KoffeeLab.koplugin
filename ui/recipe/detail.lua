@@ -1,8 +1,9 @@
 -- ui/recipe/detail.lua
--- Read-only recipe view plus the action rows (Brew Again / Add Observation /
--- Brew history / Favourite / Edit / Delete). A scrolling list grouped into
--- sections; informational rows are inert. Derived values (ratio, step duration,
--- cumulative water) are computed here, never stored.
+-- Read-only recipe view (design-language §4.4): a scrolling stack of SectionCards
+-- — Brew Details (a tile strip), Steps, Sensory, Output / Result, Flavour,
+-- History (tap → sessions), Notes. Every verb (Edit / Delete / Brew again /
+-- Favourite) is on the `detail_recipe` navbar. Derived values (ratio, step
+-- duration, cumulative water) are computed here, never stored.
 
 local AddFlow = require("ui/recipe/add_flow")
 local BrewAgain = require("ui/recipe/brew_again")
@@ -10,15 +11,23 @@ local ConfigService = require("services/config_service")
 local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local Constants = require("util/constants")
 local Derive = require("methods/derive")
+local Design = require("ui/design")
 local Format = require("util/format")
+local KvList = require("ui/widgets/kv_list")
 local Methods = require("methods/init")
 local RecipeService = require("services/recipe_service")
-local ScreenList = require("ui/screen_list")
+local ScreenCard = require("ui/screen_card")
+local SectionCard = require("ui/widgets/section_card")
+local TextBoxWidget = require("ui/widget/textboxwidget")
+local TileStrip = require("ui/widgets/tile_strip")
 local UIManager = require("ui/uimanager")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local _ = require("gettext")
 
-local RecipeDetail = ScreenList:extend {
+local RecipeDetail = ScreenCard:extend {
   name = "koffeelab_recipe_detail",
+  navbar = "detail_recipe",
   recipe_id = nil,
   on_changed = nil,
 }
@@ -26,7 +35,18 @@ local RecipeDetail = ScreenList:extend {
 function RecipeDetail:init()
   self:_fetch()
   self.title = self.recipe and self.recipe.title or _("Recipe")
-  ScreenList.init(self)
+  self.navbar = self:_navItems() -- the favourite cell reflects state
+  ScreenCard.init(self)
+end
+
+function RecipeDetail:_navItems()
+  return {
+    "home",
+    "edit",
+    "delete",
+    "brew_again",
+    { key = "favourite", on = self:_isFavourite() },
+  }
 end
 
 function RecipeDetail:_fetch()
@@ -45,8 +65,21 @@ function RecipeDetail:_fetch()
   end
 end
 
-local function row(text, value)
-  return { text = text, mandatory = value and tostring(value) or _("\u{2014}") }
+function RecipeDetail:_isFavourite()
+  return self.recipe ~= nil and tonumber(self.recipe.is_favorite) == 1
+end
+
+-- A stack of "label ......... value" lines, for use as a SectionCard body.
+function RecipeDetail:_rows(pairs_)
+  return KvList.new(self.card_w - 2 * Design.pad.card, pairs_)
+end
+
+function RecipeDetail:_wrapped(text)
+  return TextBoxWidget:new {
+    text = tostring(text),
+    face = Design.face("body"),
+    width = self.card_w - 2 * Design.pad.card,
+  }
 end
 
 local function param_value(param, raw)
@@ -65,57 +98,78 @@ local function param_value(param, raw)
   return tostring(raw)
 end
 
-function RecipeDetail:buildItems()
+function RecipeDetail:buildCards()
   local m = self.recipe
   if not m then
+    self.not_found = true
     return {
-      { text = _("Recipe not found. It may have been deleted."), kind = "text", _inert = true },
+      SectionCard:new {
+        width = self.card_w,
+        show_parent = self,
+        body = self:_wrapped(_("Recipe not found. It may have been deleted.")),
+      },
     }
   end
+  self.not_found = false
   local method = m.method or Methods.get(m.method_slug)
-  local items = {}
+  local cards = {}
 
-  items[#items + 1] = { text = _("Brew"), kind = "head" }
-  items[#items + 1] = row(_("Method"), m.method_name)
-  if self.bean then
-    items[#items + 1] = row(_("Bean"), self.bean.name)
+  -- Brew Details -------------------------------------------------------------
+  local tiles = {}
+  local function tile(label, value)
+    if value ~= nil and value ~= "" then
+      tiles[#tiles + 1] = { label = label, value = tostring(value) }
+    end
   end
-  if m.dose_g ~= nil then
-    items[#items + 1] = row(_("Dose"), Format.grams(m.dose_g))
+  tile(_("Method"), m.method_name)
+  if self.bean then
+    tile(_("Bean"), self.bean.name .. (m.dose_g and "  \u{00B7}  " .. Format.grams(m.dose_g) or ""))
+  elseif m.dose_g ~= nil then
+    tile(_("Dose"), Format.grams(m.dose_g))
   end
   if self.grinder then
     local g = Format.grind(m.grind_value, self.grinder.unit_name)
-    items[#items + 1] = row(_("Grinder"), self.grinder.name .. (g and "  \u{00B7}  " .. g or ""))
+    tile(_("Grind"), self.grinder.name .. (g and "  \u{00B7}  " .. g or ""))
   end
-  if m.water_g ~= nil then
-    items[#items + 1] = row(_("Water"), Format.grams(m.water_g))
-  end
-  if m.water_temp_c ~= nil then
-    items[#items + 1] = row(_("Temperature"), Format.temp_c(m.water_temp_c))
+  if m.water_g ~= nil or m.water_temp_c ~= nil then
+    local bits = {}
+    if m.water_g ~= nil then
+      bits[#bits + 1] = Format.grams(m.water_g)
+    end
+    if m.water_temp_c ~= nil then
+      bits[#bits + 1] = Format.temp_c(m.water_temp_c)
+    end
+    tile(_("Water"), table.concat(bits, " / "))
   end
   if m.brew_time_sec ~= nil then
-    items[#items + 1] = row(_("Brew time"), Format.duration(m.brew_time_sec))
-  end
-  if m.output_weight_g ~= nil then
-    items[#items + 1] = row(_("Output"), Format.grams(m.output_weight_g))
+    tile(_("Brew time"), Format.duration(m.brew_time_sec))
   end
   local ratio = Format.ratio(m.water_g, m.dose_g, m.output_weight_g)
-  if ratio then
-    items[#items + 1] = row(_("Ratio"), ratio)
-  end
-
-  for _, p in ipairs(method and method.params or {}) do
-    local v = param_value(p, m.spec and m.spec[p.key])
-    if v ~= nil then
-      items[#items + 1] = row(p.label, v)
+  if m.output_weight_g ~= nil or ratio then
+    local bits = {}
+    if m.output_weight_g ~= nil then
+      bits[#bits + 1] = Format.grams(m.output_weight_g)
     end
+    if ratio then
+      bits[#bits + 1] = ratio
+    end
+    tile(_("Output"), table.concat(bits, "  \u{00B7}  "))
   end
+  for _, p in ipairs(method and method.params or {}) do
+    tile(p.label, param_value(p, m.spec and m.spec[p.key]))
+  end
+  cards[#cards + 1] = SectionCard:new {
+    width = self.card_w,
+    title = _("Brew Details"),
+    show_parent = self,
+    body = TileStrip:new { width = self.card_w - 2 * Design.pad.card, items = tiles },
+  }
 
+  -- Steps -------------------------------------------------------------------
   if #(m.steps or {}) > 0 then
     local total_water = Derive.total_water(m.steps)
-    items[#items + 1] = { text = _("Brew steps"), mandatory = tostring(#m.steps), kind = "head" }
+    local step_rows = {}
     for i, step in ipairs(m.steps) do
-      local head = string.format("#%d  %s", i, Methods.step_label(step.step_type))
       local note = {}
       if step.start_time then
         note[#note + 1] = Format.duration(step.start_time)
@@ -129,112 +183,117 @@ function RecipeDetail:buildItems()
       elseif step.water then
         note[#note + 1] = Format.grams(step.water)
       end
-      items[#items + 1] = { text = head, mandatory = table.concat(note, " \u{00B7} ") }
+      step_rows[#step_rows + 1] = {
+        string.format("#%d  %s", i, Methods.step_label(step.step_type)),
+        table.concat(note, "  \u{00B7}  "),
+      }
     end
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = _("Steps"),
+      show_parent = self,
+      body = self:_rows(step_rows),
+    }
   end
 
-  if m.output_note and m.output_note ~= "" then
-    local label = method and method.output_note and method.output_note.label or _("Expected result")
-    items[#items + 1] = { text = label, kind = "head" }
-    items[#items + 1] = { text = m.output_note, kind = "text" }
-  end
-
-  local has_sensory = false
+  -- Sensory + Output / Result --------------------------------------------
+  local sensory_rows = {}
   for _, axis in ipairs(Constants.SENSORY_AXES) do
     if m[axis.key] ~= nil then
-      has_sensory = true
+      sensory_rows[#sensory_rows + 1] = { axis.label, Format.rating_stars(m[axis.key]) }
     end
   end
-  if has_sensory then
-    items[#items + 1] = { text = _("Sensory"), kind = "head" }
-    for _, axis in ipairs(Constants.SENSORY_AXES) do
-      if m[axis.key] ~= nil then
-        items[#items + 1] = row(axis.label, Format.rating_stars(m[axis.key]))
-      end
-    end
-  end
-  if m.overall_rating ~= nil then
-    items[#items + 1] = row(_("Overall"), Format.rating_stars(m.overall_rating))
+  if #sensory_rows > 0 then
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = _("Sensory"),
+      show_parent = self,
+      body = self:_rows(sensory_rows),
+    }
   end
 
+  local result_rows = {}
+  if m.overall_rating ~= nil then
+    result_rows[#result_rows + 1] = { _("Overall"), Format.rating_stars(m.overall_rating) }
+  end
   if #(m.flavor_tags or {}) > 0 then
     local names = {}
     for _, tag in ipairs(m.flavor_tags) do
       names[#names + 1] = tag.name
     end
-    items[#items + 1] = row(_("Flavor"), table.concat(names, " \u{00B7} "))
+    result_rows[#result_rows + 1] = { _("Flavour"), table.concat(names, "  \u{00B7}  ") }
+  end
+  if m.output_note and m.output_note ~= "" or #result_rows > 0 then
+    local label = method and method.output_note and method.output_note.label or _("Expected result")
+    local body
+    if m.output_note and m.output_note ~= "" and #result_rows > 0 then
+      body = VerticalGroup:new {
+        align = "left",
+        self:_wrapped(m.output_note),
+        VerticalSpan:new { width = Design.gap },
+        self:_rows(result_rows),
+      }
+    elseif m.output_note and m.output_note ~= "" then
+      body = self:_wrapped(m.output_note)
+    else
+      body = self:_rows(result_rows)
+    end
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = label,
+      show_parent = self,
+      body = body,
+    }
   end
 
-  if m.notes and m.notes ~= "" then
-    items[#items + 1] = { text = _("Notes"), kind = "head" }
-    items[#items + 1] = { text = m.notes, kind = "text" }
-  end
-
+  -- History ---------------------------------------------------------------
   local stats = m.stats or {}
-  items[#items + 1] = { text = _("History"), kind = "head" }
-  items[#items + 1] = row(_("Brew count"), tonumber(stats.brew_count) or 0)
+  local hist_rows = { { _("Brew count"), tonumber(stats.brew_count) or 0 } }
   if stats.avg_session_rating then
-    items[#items + 1] =
-      row(_("Session average"), Format.rating_avg_stars(tonumber(stats.avg_session_rating)))
+    hist_rows[#hist_rows + 1] =
+      { _("Session average"), Format.rating_avg_stars(tonumber(stats.avg_session_rating)) }
   end
-
-  local fav = tonumber(m.is_favorite) == 1
-  items[#items + 1] = { text = _("Actions"), kind = "head" }
-  items[#items + 1] = {
-    text = _("Brew Again"),
-    mandatory = "\u{203A}",
-    _action = "brew_again",
-    callback = function()
-      self:_brew(_("Brew Again"))
-    end,
-  }
-  items[#items + 1] = {
-    text = _("Add Observation"),
-    mandatory = "\u{203A}",
-    _action = "observe",
-    callback = function()
-      self:_brew(_("Add Observation"))
-    end,
-  }
-  items[#items + 1] = {
-    text = _("Brew history"),
-    mandatory = (tonumber(stats.brew_count) or 0) .. "  \u{203A}",
-    _action = "history",
-    callback = function()
+  cards[#cards + 1] = SectionCard:new {
+    width = self.card_w,
+    title = _("History"),
+    show_parent = self,
+    on_tap = function()
       self:_openHistory()
     end,
+    body = self:_rows(hist_rows),
   }
-  items[#items + 1] = {
-    text = fav and _("Remove from Favourites") or _("Add to Favourites"),
-    mandatory = fav and "\u{2605}" or "\u{2606}",
-    _action = "favorite",
-    callback = function()
-      RecipeService.set_favorite(self.recipe_id, not fav)
-      self:_afterSessionChange()
-    end,
-  }
-  items[#items + 1] = {
-    text = _("Edit"),
-    mandatory = "\u{203A}",
-    _action = "edit",
-    callback = function()
-      self:_edit()
-    end,
-  }
-  items[#items + 1] = {
-    text = _("Delete"),
-    mandatory = "\u{203A}",
-    _action = "delete",
-    callback = function()
-      self:_delete()
-    end,
-  }
-  return items
+
+  -- Notes ---------------------------------------------------------------
+  if m.notes and m.notes ~= "" then
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = _("Notes"),
+      show_parent = self,
+      body = self:_wrapped(m.notes),
+    }
+  end
+
+  return cards
+end
+
+--- Navbar verbs (design-language §3.7 `detail_recipe` preset).
+function RecipeDetail:onNavAction(key)
+  if key == "edit" then
+    self:_edit()
+  elseif key == "delete" then
+    self:_delete()
+  elseif key == "brew_again" then
+    self:_brew(_("Brew Again"))
+  elseif key == "favourite" then
+    RecipeService.set_favorite(self.recipe_id, not self:_isFavourite())
+    self:_afterSessionChange()
+  end
 end
 
 function RecipeDetail:_reload()
   self:_fetch()
   self.title = self.recipe and self.recipe.title or _("Recipe")
+  self:setNavbarItems(self:_navItems())
   self:refresh()
 end
 

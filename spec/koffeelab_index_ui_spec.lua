@@ -281,11 +281,8 @@ describe("ui index / search (Phase 6)", function()
 
     local detail = Nav:push(DrinkDetail:new { drink_id = drink.id })
     detail:paintTo(Screen.bb, 0, 0)
-    local seen = {}
-    for _, item in ipairs(detail.item_table) do
-      seen[item.text] = item.mandatory
-    end
-    assert.are.equal("Test espresso", seen["Base recipe"])
-    assert.is_truthy(seen["Remaining of batch"]:find("16")) -- 36 - 20
+    -- Base card built with the base recipe + derived remaining-of-batch
+    assert.are.equal("Base", detail.cards[1].title)
+    assert.are.equal(16, detail.remaining_g) -- 36 - 20
   end)
 end)

@@ -1,20 +1,28 @@
 -- ui/drink/detail.lua
--- Custom-drink detail page (TECH_SOLUTION §2.15 / §2.14). Read-only presentation
--- of one drink: temperature, base recipe + amount used, the derived remaining
--- output (never stored — §3.13), extra ingredients, process steps, rating and
--- comment, plus Edit / Delete actions (§2.17). A scrolling sectioned list.
+-- Custom-drink detail page (TECH_SOLUTION §2.15; design-language §4.5). A
+-- scrolling stack of SectionCards — Base (recipe + amount + derived remaining),
+-- Ingredients, Steps, Result — with Edit / Delete on the `detail_drink` navbar.
+-- The remaining-of-batch value is derived here, never stored (§3.13).
 
 local AddFlow = require("ui/drink/add_flow")
 local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local Constants = require("util/constants")
+local Design = require("ui/design")
 local DrinkService = require("services/drink_service")
 local Format = require("util/format")
-local ScreenList = require("ui/screen_list")
+local KvList = require("ui/widgets/kv_list")
+local ScreenCard = require("ui/screen_card")
+local SectionCard = require("ui/widgets/section_card")
+local TextBoxWidget = require("ui/widget/textboxwidget")
+local TileStrip = require("ui/widgets/tile_strip")
 local UIManager = require("ui/uimanager")
+local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
 local _ = require("gettext")
 
-local DrinkDetail = ScreenList:extend {
+local DrinkDetail = ScreenCard:extend {
   name = "koffeelab_drink_detail",
+  navbar = "detail_drink",
   drink_id = nil, -- required
   on_changed = nil, -- optional: called after edit / delete
 }
@@ -22,16 +30,12 @@ local DrinkDetail = ScreenList:extend {
 function DrinkDetail:init()
   self:_fetch()
   self.title = self.drink and self.drink.title or _("Drink")
-  ScreenList.init(self)
+  ScreenCard.init(self)
 end
 
 function DrinkDetail:_fetch()
   local ok, drink = DrinkService.get(self.drink_id)
   self.drink = ok and drink or nil
-end
-
-local function row(text, value)
-  return { text = text, mandatory = value and tostring(value) or _("\u{2014}") }
 end
 
 local function amount_str(amount, unit)
@@ -45,75 +49,132 @@ local function amount_str(amount, unit)
   return Format.grams(n)
 end
 
-function DrinkDetail:buildItems()
+function DrinkDetail:_wrapped(text)
+  return TextBoxWidget:new {
+    text = tostring(text),
+    face = Design.face("body"),
+    width = self.card_w - 2 * Design.pad.card,
+  }
+end
+
+function DrinkDetail:buildCards()
   local d = self.drink
   if not d then
-    return { { text = _("Drink not found."), kind = "text", _inert = true } }
+    self.not_found = true
+    return {
+      SectionCard:new {
+        width = self.card_w,
+        show_parent = self,
+        body = self:_wrapped(_("Drink not found. It may have been deleted.")),
+      },
+    }
   end
-  local items = {}
+  self.not_found = false
+  local inner = self.card_w - 2 * Design.pad.card
+  local cards = {}
 
-  items[#items + 1] = row(
-    _("Temperature"),
-    Constants.TEMPERATURE_MODE_LABELS[d.temperature_mode] or d.temperature_mode
-  )
-
+  -- Base ------------------------------------------------------------------
   local base = d.base_recipe
-  items[#items + 1] = row(_("Base recipe"), base and base.title or _("\u{2014}"))
-  items[#items + 1] = row(_("Amount used"), amount_str(d.base_amount, d.base_unit))
-
+  local tiles = {
+    {
+      label = _("Temperature"),
+      value = Constants.TEMPERATURE_MODE_LABELS[d.temperature_mode] or d.temperature_mode,
+    },
+    { label = _("Base recipe"), value = base and base.title or _("\u{2014}") },
+  }
+  local amt = amount_str(d.base_amount, d.base_unit)
+  if amt then
+    tiles[#tiles + 1] = { label = _("Amount used"), value = amt }
+  end
   local out = base and tonumber(base.output_weight_g) or nil
   local used = tonumber(d.base_amount)
+  self.remaining_g = nil
   if out and used then
-    items[#items + 1] = row(_("Remaining of batch"), Format.grams(math.max(0, out - used)))
+    self.remaining_g = math.max(0, out - used)
+    tiles[#tiles + 1] = { label = _("Remaining of batch"), value = Format.grams(self.remaining_g) }
   end
+  cards[#cards + 1] = SectionCard:new {
+    width = self.card_w,
+    title = _("Base"),
+    show_parent = self,
+    body = TileStrip:new { width = inner, items = tiles },
+  }
 
+  -- Ingredients ---------------------------------------------------------
   if #(d.ingredients or {}) > 0 then
-    items[#items + 1] =
-      { text = _("Ingredients"), mandatory = tostring(#d.ingredients), kind = "head" }
+    local rows = {}
     for _idx, ing in ipairs(d.ingredients) do -- luacheck: ignore _idx
-      items[#items + 1] = {
-        text = ing.ingredient_name or _("?"),
-        mandatory = amount_str(ing.amount, ing.unit) or _("\u{2014}"),
+      rows[#rows + 1] = {
+        ing.ingredient_name or _("?"),
+        amount_str(ing.amount, ing.unit) or _("\u{2014}"),
       }
     end
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = _("Ingredients"),
+      show_parent = self,
+      body = KvList.new(inner, rows),
+    }
   end
 
+  -- Steps -------------------------------------------------------------
   if #(d.steps or {}) > 0 then
-    items[#items + 1] = { text = _("Steps"), mandatory = tostring(#d.steps), kind = "head" }
+    local body = VerticalGroup:new { align = "left" }
     for i, step in ipairs(d.steps) do
-      items[#items + 1] = { text = string.format("#%d  %s", i, step.instruction or "") }
+      if i > 1 then
+        body[#body + 1] = VerticalSpan:new { width = Design.gap }
+      end
+      body[#body + 1] = self:_wrapped(string.format("#%d  %s", i, step.instruction or ""))
       if step.note and step.note ~= "" then
-        items[#items + 1] = { text = step.note, kind = "text" }
+        body[#body + 1] = VerticalSpan:new { width = Design.gap_tight }
+        body[#body + 1] = self:_wrapped(step.note)
       end
     end
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = _("Steps"),
+      show_parent = self,
+      body = body,
+    }
   end
 
+  -- Result ----------------------------------------------------------
+  local result_rows = {}
   if d.rating ~= nil then
-    items[#items + 1] = row(_("Rating"), Format.rating_stars(tonumber(d.rating)))
+    result_rows[#result_rows + 1] = { _("Rating"), Format.rating_stars(tonumber(d.rating)) }
   end
-  if d.comment and d.comment ~= "" then
-    items[#items + 1] = { text = _("Comment"), kind = "head" }
-    items[#items + 1] = { text = d.comment, kind = "text" }
+  if #result_rows > 0 or (d.comment and d.comment ~= "") then
+    local body
+    if d.comment and d.comment ~= "" and #result_rows > 0 then
+      body = VerticalGroup:new {
+        align = "left",
+        KvList.new(inner, result_rows),
+        VerticalSpan:new { width = Design.gap },
+        self:_wrapped(d.comment),
+      }
+    elseif d.comment and d.comment ~= "" then
+      body = self:_wrapped(d.comment)
+    else
+      body = KvList.new(inner, result_rows)
+    end
+    cards[#cards + 1] = SectionCard:new {
+      width = self.card_w,
+      title = _("Result"),
+      show_parent = self,
+      body = body,
+    }
   end
 
-  items[#items + 1] = { text = _("Actions"), kind = "head" }
-  items[#items + 1] = {
-    text = _("Edit"),
-    mandatory = "\u{203A}",
-    _action = "edit",
-    callback = function()
-      self:_edit()
-    end,
-  }
-  items[#items + 1] = {
-    text = _("Delete"),
-    mandatory = "\u{203A}",
-    _action = "delete",
-    callback = function()
-      self:_delete()
-    end,
-  }
-  return items
+  return cards
+end
+
+--- Navbar verbs (design-language §3.7 `detail_drink` preset).
+function DrinkDetail:onNavAction(key)
+  if key == "edit" then
+    self:_edit()
+  elseif key == "delete" then
+    self:_delete()
+  end
 end
 
 function DrinkDetail:_reload()

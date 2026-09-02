@@ -60,14 +60,6 @@ local function tap_action(form, label)
   error("no action row: " .. label)
 end
 
-local function has_action(form, label)
-  for _, item in ipairs(form.item_table) do
-    if item._action and item.text == label then
-      return item
-    end
-  end
-end
-
 describe("ui brew history (Phase 7)", function()
   local ids
 
@@ -224,23 +216,31 @@ describe("ui brew history (Phase 7)", function()
   end)
 
   describe("recipe detail wiring", function()
-    it("has a Brew history row and opens the sub-screen", function()
+    local function card_titled(detail, title)
+      for _, c in ipairs(detail.cards) do
+        if c.title == title then
+          return c
+        end
+      end
+    end
+
+    it("has a tappable History card that opens the sub-screen", function()
       local recipe = make_recipe("pour_over", ids)
       assert(BrewService.record { recipe_id = recipe.id, session_rating = 4 })
       local detail = Nav:push(RecipeDetail:new { recipe_id = recipe.id })
 
-      local history_item = has_action(detail, "Brew history")
-      assert.is_truthy(history_item)
-      assert.is_truthy(tostring(history_item.mandatory):find("1"))
+      local history = card_titled(detail, "History")
+      assert.is_truthy(history)
+      assert.is_function(history.on_tap)
 
-      detail:onMenuChoice(history_item)
+      detail:_openHistory()
       assert.are.equal("koffeelab_recipe_history", Nav:top().name)
     end)
 
-    it("Brew Again from the detail records a session and reloads", function()
+    it("Brew again from the navbar records a session and reloads", function()
       local recipe = make_recipe("pour_over", ids)
       local detail = Nav:push(RecipeDetail:new { recipe_id = recipe.id })
-      detail:onMenuChoice(has_action(detail, "Brew Again"))
+      detail:onNavAction("brew_again")
 
       local form = Nav:top()
       assert.are.equal("koffeelab_form", form.name)
@@ -251,6 +251,14 @@ describe("ui brew history (Phase 7)", function()
       assert.are.equal("koffeelab_recipe_detail", Nav:top().name)
       local _, stats = BrewService.stats(recipe.id)
       assert.are.equal(1, tonumber(stats.brew_count))
+    end)
+
+    it("the favourite navbar cell toggles state", function()
+      local recipe = make_recipe("pour_over", ids)
+      local detail = Nav:push(RecipeDetail:new { recipe_id = recipe.id })
+      assert.is_false(detail:_isFavourite())
+      detail:onNavAction("favourite")
+      assert.is_true(detail:_isFavourite())
     end)
   end)
 end)

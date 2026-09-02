@@ -68,6 +68,27 @@ ScreenBase.NAVBARS = NAVBARS
 --- Screen-specific navbar keys (filter / sort / edit / …) land here. Override.
 function ScreenBase:onNavAction(_key) end
 
+--- Rebuild the bottom navbar with a new item list / active cell and repaint once.
+--- Used when a cell must reflect changed state (e.g. the favourite star).
+function ScreenBase:setNavbarItems(items, active)
+  if not self._navbar_slot then
+    return
+  end
+  self._nav_items = items or self._nav_items
+  self._nav_active = active or self._nav_active
+  self.navbar_widget = Navbar:new {
+    width = self.screen_w,
+    items = self._nav_items,
+    active = self._nav_active,
+    show_parent = self,
+    on_select = function(key)
+      self:_navSelect(key)
+    end,
+  }
+  self._navbar_slot[1] = self.navbar_widget
+  UIManager:setDirty(self, "ui")
+end
+
 function ScreenBase:init()
   self.screen_w = Screen:getWidth()
   self.screen_h = Screen:getHeight()
@@ -137,6 +158,7 @@ function ScreenBase:init()
 
   local root = body
   if self.navbar then
+    self._nav_items, self._nav_active = nav_items, nav_active
     self.navbar_widget = Navbar:new {
       width = self.screen_w,
       items = nav_items,
@@ -146,13 +168,14 @@ function ScreenBase:init()
         self:_navSelect(key)
       end,
     }
+    self._navbar_slot = BottomContainer:new {
+      dimen = Geom:new { w = self.screen_w, h = self.screen_h },
+      self.navbar_widget,
+    }
     root = OverlapGroup:new {
       dimen = Geom:new { w = self.screen_w, h = self.screen_h },
       body,
-      BottomContainer:new {
-        dimen = Geom:new { w = self.screen_w, h = self.screen_h },
-        self.navbar_widget,
-      },
+      self._navbar_slot,
     }
   end
 
