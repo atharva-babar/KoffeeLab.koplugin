@@ -1,10 +1,10 @@
 -- ui/widgets/form_screen.lua
--- FormScreen — a vertically ordered list of labelled rows for long forms
--- (TECH_SOLUTION §2.1 rules 7/11, §3.15 "divide long forms into pages"). Built
--- on KOReader's Menu so pagination, large tap targets and Back handling come for
--- free. Each row shows `LABEL .............. current value`; tapping it runs the
--- field's editor (a ListPicker / NumberInput / DurationInput / …), which writes
--- back into `self.values` and calls `self:refreshItems()`.
+-- FormScreen — a scrolling list of labelled rows for long forms (TECH_SOLUTION
+-- §2.1 rules 7/11). Each row shows `LABEL ............. current value`; tapping it
+-- runs the field's editor (a ListPicker / NumberInput / DurationInput / …), which
+-- writes back into `self.values` and calls `self:refreshItems()`. Built on
+-- ui/screen_list so it scrolls (no pagination bar) and Back handling comes from
+-- ScreenBase.
 --
 --   local screen = FormScreen:new{
 --     title = _("New Pour Over"),
@@ -12,63 +12,55 @@
 --     fields = {
 --       { key = "title", label = _("Title"),
 --         display = function(v) return v.title end,
---         edit = function(form) ... form:set("title", text); end },
---       { key = "dose_g", label = _("Dose"),
---         display = function(v) return v.dose_g and (v.dose_g .. " g") end,
---         edit = function(form) NumberInput.show{ ... on_ok = function(n) form:set("dose_g", n) end } end },
+--         edit = function(form) ... form:set("title", text) end },
 --     },
 --     actions = {                            -- optional footer rows
 --       { text = _("Save"), callback = function(form) ... end },
 --     },
+--     on_back = function() ... end,          -- optional; default Nav:pop
 --   }
 --   Nav:push(screen)
 
-local Menu = require("ui/widget/menu")
-local UIManager = require("ui/uimanager")
+local ScreenBase = require("ui/screen_base")
+local ScreenList = require("ui/screen_list")
 local _ = require("gettext")
 
-local FormScreen = Menu:extend {
+local FormScreen = ScreenList:extend {
   name = "koffeelab_form",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false, -- no keyboard shortcut column on e-ink
-  title_bar_left_icon = "chevron.left",
   fields = nil,
   values = nil,
   actions = nil,
-  -- called after Back (gesture / key / chevron); defaults to Nav:pop when nav is set
   on_back = nil,
 }
 
 function FormScreen:init()
   self.values = self.values or {}
   self.fields = self.fields or {}
-  self.item_table = self:_buildItems()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
-function FormScreen:_buildItems()
+function FormScreen:buildItems()
   local items = {}
-  -- NB: do not use `_` as the loop variable here — it shadows the gettext `_`
-  -- that the `_("—")` fallback below needs.
   for _idx, field in ipairs(self.fields) do -- luacheck: ignore _idx
-    local value_str
-    if field.display then
-      value_str = field.display(self.values)
-    end
-    table.insert(items, {
+    local value_str = field.display and field.display(self.values)
+    items[#items + 1] = {
       text = field.label,
-      mandatory = value_str and tostring(value_str) or _("—"),
+      mandatory = value_str and tostring(value_str) or _("\u{2014}"),
       _field = field,
-    })
+      callback = field.edit and function()
+        field.edit(self)
+      end or nil,
+    }
   end
   for _idx, action in ipairs(self.actions or {}) do -- luacheck: ignore _idx
-    table.insert(items, {
+    items[#items + 1] = {
       text = action.text,
       mandatory = "\u{203A}", -- ›
       _action = action,
-    })
+      callback = function()
+        action.callback(self)
+      end,
+    }
   end
   return items
 end
@@ -80,11 +72,10 @@ function FormScreen:set(key, value)
 end
 
 function FormScreen:refreshItems()
-  -- keep the reader on the page they were editing
-  local keep = math.max(1, ((self.page or 1) - 1) * (self.perpage or 1) + 1)
-  self:switchItemTable(nil, self:_buildItems(), keep)
+  self:refresh()
 end
 
+--- Kept for parity with the old Menu API (specs call this directly).
 function FormScreen:onMenuChoice(item)
   if item._action then
     item._action.callback(self)
@@ -94,18 +85,12 @@ function FormScreen:onMenuChoice(item)
   return true
 end
 
-function FormScreen:_back()
+function FormScreen:_goBack()
   if self.on_back then
     self.on_back()
-  elseif self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
+    return true
   end
-  return true
+  return ScreenBase._goBack(self)
 end
-
-FormScreen.onClose = FormScreen._back
-FormScreen.onLeftButtonTap = FormScreen._back
 
 return FormScreen
