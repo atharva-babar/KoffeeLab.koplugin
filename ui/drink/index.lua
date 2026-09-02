@@ -92,7 +92,12 @@ function DrinkIndex:_items()
   rows = ok and rows or {}
   items[#items + 1] = { text = _("Drinks"), mandatory = tostring(#rows), _head = true }
   if #rows == 0 then
-    items[#items + 1] = { text = _("  No drinks match."), _inert = true }
+    local unfiltered = self.temperature_mode == nil and self.ingredient_id == nil
+    items[#items + 1] = {
+      text = unfiltered and _("  No custom drinks yet. Add one from the Home screen.")
+        or _("  No drinks match this filter."),
+      _inert = true,
+    }
   end
   for _idx, d in ipairs(rows) do -- luacheck: ignore _idx
     items[#items + 1] = { text = d.title, mandatory = row_note(d), _drink_id = d.id }

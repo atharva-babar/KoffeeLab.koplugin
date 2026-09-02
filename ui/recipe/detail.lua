@@ -63,7 +63,7 @@ end
 function RecipeDetail:_items()
   local m = self.recipe
   if not m then
-    return { { text = _("Recipe not found.") } }
+    return { { text = _("Recipe not found. It may have been deleted."), _inert = true } }
   end
   local items = {}
 

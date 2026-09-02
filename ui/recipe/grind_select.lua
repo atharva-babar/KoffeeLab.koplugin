@@ -63,6 +63,12 @@ function GrindSelect.build(opts)
       edit = function(form)
         local ok, grinders = ConfigService.grinders.list {}
         grinders = ok and grinders or {}
+        if #grinders == 0 then
+          UIManager:show(InfoMessage:new {
+            text = _("No grinders configured yet. Add one in Configurator › Grinders."),
+          })
+          return
+        end
         local items = {}
         for _idx, g in ipairs(grinders) do -- luacheck: ignore _idx
           items[#items + 1] = {

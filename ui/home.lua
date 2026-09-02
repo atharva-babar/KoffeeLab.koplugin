@@ -2,8 +2,7 @@
 -- KoffeeLab root screen (TECH_SOLUTION §2.2, §2.3): four large full-width
 -- buttons — Add Recipe, Custom Drink, Index, Configurator — plus an overflow
 -- menu (Backup, Restore, About) behind the titlebar's right-hand icon. Every
--- button navigates through Nav; later phases swap the placeholder destinations
--- for real screens.
+-- button navigates through Nav.
 
 local ButtonDialog = require("ui/widget/buttondialog")
 local ButtonTable = require("ui/widget/buttontable")

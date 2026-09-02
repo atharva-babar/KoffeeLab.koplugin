@@ -88,7 +88,12 @@ function RecipeIndex:_items()
   rows = ok and rows or {}
   items[#items + 1] = { text = _("Recipes"), mandatory = tostring(#rows), _head = true }
   if #rows == 0 then
-    items[#items + 1] = { text = _("  No recipes match."), _inert = true }
+    local unfiltered = self.method_id == nil and self.search == ""
+    items[#items + 1] = {
+      text = unfiltered and _("  No recipes yet. Add one from the Home screen.")
+        or _("  No recipes match this filter."),
+      _inert = true,
+    }
   end
   for _idx, r in ipairs(rows) do -- luacheck: ignore _idx
     items[#items + 1] = { text = r.title, mandatory = row_note(r), _recipe_id = r.id }
