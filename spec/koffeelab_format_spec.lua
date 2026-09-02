@@ -88,6 +88,13 @@ describe("util/format", function()
       assert.are.equal("93\u{00B0}C", Format.temp_c(93))
       assert.are.equal("93.5\u{00B0}C", Format.temp_c(93.5))
     end)
+
+    it("formats a stored timestamp and rejects non-numbers", function()
+      local ts = os.time { year = 2026, month = 9, day = 2, hour = 14, min = 30, sec = 0 }
+      assert.are.equal("2026-09-02 14:30", Format.timestamp(ts))
+      assert.is_nil(Format.timestamp(nil))
+      assert.is_nil(Format.timestamp("nope"))
+    end)
   end)
 
   describe("parse_duration", function()

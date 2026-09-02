@@ -2,15 +2,16 @@
 -- Recipe detail page (TECH_SOLUTION §2.15). Read-only presentation of one recipe:
 -- the brew parameters, ratio (util/format), sensory block, flavor tags, notes,
 -- and the derived brew count + session average (never stored — §3.13). The
--- trailing rows are the actions: Brew Again / Add Observation (Phase 7), Edit
--- and Delete (§2.17, §2.18). Built on Menu; informational rows are inert.
+-- trailing rows are the actions: Brew Again / Add Observation (§2.16), Brew
+-- history (§2.15), Edit and Delete (§2.17, §2.18). Built on Menu; informational
+-- rows are inert.
 
 local AddFlow = require("ui/recipe/add_flow")
+local BrewAgain = require("ui/recipe/brew_again")
 local ConfigService = require("services/config_service")
 local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local Constants = require("util/constants")
 local Format = require("util/format")
-local InfoMessage = require("ui/widget/infomessage")
 local Menu = require("ui/widget/menu")
 local RecipeService = require("services/recipe_service")
 local UIManager = require("ui/uimanager")
@@ -161,6 +162,11 @@ function RecipeDetail:_items()
 
   items[#items + 1] = { text = _("Brew Again"), mandatory = "\u{203A}", _action = "brew_again" }
   items[#items + 1] = { text = _("Add Observation"), mandatory = "\u{203A}", _action = "observe" }
+  items[#items + 1] = {
+    text = _("Brew history"),
+    mandatory = (tonumber(stats.brew_count) or 0) .. "  \u{203A}",
+    _action = "history",
+  }
   items[#items + 1] = { text = _("Edit"), mandatory = "\u{203A}", _action = "edit" }
   items[#items + 1] = { text = _("Delete"), mandatory = "\u{203A}", _action = "delete" }
   return items
@@ -171,12 +177,36 @@ function RecipeDetail:_reload()
   self:switchItemTable(self.recipe and self.recipe.title or _("Recipe"), self:_items(), 1)
 end
 
+function RecipeDetail:_afterSessionChange()
+  self:_reload()
+  if self.on_changed then
+    self.on_changed()
+  end
+end
+
 function RecipeDetail:onMenuChoice(item)
   local action = item._action
+  local stats = self.recipe and self.recipe.stats or {}
   if action == "brew_again" or action == "observe" then
-    UIManager:show(InfoMessage:new {
-      text = _("Brew history arrives in Phase 7."),
+    BrewAgain.open(self.recipe_id, {
+      title = action == "observe" and _("Add Observation") or _("Brew Again"),
+      brew_count = tonumber(stats.brew_count) or 0,
+      on_saved = function()
+        self:_afterSessionChange()
+      end,
     })
+  elseif action == "history" then
+    local screen = require("ui/recipe/history"):new {
+      recipe_id = self.recipe_id,
+      on_changed = function()
+        self:_afterSessionChange()
+      end,
+    }
+    if self.nav then
+      self.nav:push(screen)
+    else
+      UIManager:show(screen)
+    end
   elseif action == "edit" then
     ConfirmDialog.confirm {
       text = _("Edit recipe?\n\nExisting recipe data will be changed."),

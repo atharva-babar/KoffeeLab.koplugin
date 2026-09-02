@@ -133,6 +133,17 @@ function Format.temp_c(value)
   return num .. "\u{00B0}C"
 end
 
+--- Best-effort local date + time for a stored `os.time()` value, e.g.
+--- 1756819800 -> "2025-09-02 14:30". Display only — the device clock may be
+--- wrong (§Conventions 11). Returns nil for nil / non-number input.
+function Format.timestamp(ts)
+  local n = tonumber(ts)
+  if not n then
+    return nil
+  end
+  return os.date("%Y-%m-%d %H:%M", n)
+end
+
 local function parse_number(s)
   return tonumber((s:gsub(",", ".")))
 end
