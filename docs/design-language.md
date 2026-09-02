@@ -198,33 +198,54 @@ Same card treatment: **Base** (recipe + amount + remaining-of-batch tiles),
 **Ingredients** (name · amount rows), **Steps** (numbered), **Rating / Comment**.
 Navbar: home·edit·delete.
 
-### 4.6 Recipe wizard (Add / Edit)
-Multi-page, each page a few cards:
-1. **Basics** — Title card + Method card (side by side) · Description card
-2. **Brew** — Beans / Water / Grind tile-cards (each opens a popup) · method
-   params card
-3. **Steps** — steps card (2-col grid) + navbar `add`
-4. **Output** — Expected / Ratio cards · Flavour-profile card · Rating
-Navbar per page: back · (next | save) · exit. A page validates before `next`.
+### 4.6 Recipe / Drink wizard (Add / Edit)
+`ui/widgets/wizard.lua` — multi-page, each page a short stack of **field cards**
+(label over current value + chevron; tap opens the same modal editor the old form
+used). A "Step N of M" card heads each page. Navbar per page: `back · (next |
+save) · exit` — `next` runs the page's `validate(values, draft)`, `save` (last
+page) validates every page then persists, `exit` confirms then abandons the
+draft; hardware Back / swipe step to the previous page.
+
+Recipe pages: **Basics** (Title, Method — read-only) · **Brew** (Bean, Grind,
+the method's dose/water/temp/time/output fields, method params) · **Steps** (a
+card that pushes the step sub-editor) · **Output** (Expected result, Flavour &
+sensory). Drink pages: **Basics** (Title, Temperature, Base recipe, Amount) ·
+**Extras** (Ingredients, Steps, Rating, Comment).
+
+The leaf editors reached from a field card — one brew step, one ingredient, the
+sensory screen, the grind dial, Brew Again — stay on `ui/widgets/form_screen`
+(now card-styled rows via `scroll_list`); they are small modal-ish forms, not
+wizards.
 
 ### 4.7 Configurator & config lists
-Configurator: a card list of categories (icon + name). Each config list: cards
-per entity, navbar home·add·(sort)·back. "Load sample data" stays under a
-"Developer" section.
+Configurator: a card list of categories, an "About KoffeeLab" row, and a
+"Developer › Load sample data" row; navbar `home·index·add·configurator`. Each
+config list: entity cards + a "+ Add" card row, navbar `home·back`.
+
+### 4.8 Stopwatch
+`ui/recipe/stopwatch.lua` — a big centred `display`-face elapsed readout in a
+card, over a `CardRow` of action tiles (Start / Split·Stop / Use·Restart), with
+captured splits in a `KvList` card. Static: repainted only on a tap, never on a
+timer. Navbar `home·back`.
 
 ---
 
 ## 5. What this replaces
 
 - `ui/screen_base.lua` right-icon overflow menu → gone (verbs move to navbar)
-- `ui/screen_list.lua` `head` / `text` / normal rows → `SectionCard` + card rows
-- `ui/widgets/form_screen.lua` flat label/value list → card wizard pages
+- `ui/screen_list.lua` normal rows → grey `Card` rows (icon + title + caption +
+  value); `head` / `text` kinds survive for list counts / empty-state text
+- detail screens' `head` / `text` / row lists → `ui/screen_card` + `SectionCard`
+  / `TileStrip` / `KvList`
+- `ui/widgets/form_screen.lua` as the *main* Add/Edit surface → `ui/widgets/
+  wizard.lua` card pages (form_screen kept for the leaf editors, §4.6)
 - per-screen "control rows" (method filter / search / sort) → navbar modals
 - titlebar chevron as the only Back → still there, but navbar `back` is primary
 - hairline under every row → whitespace + card edges
 
 Kept: `Nav` stack, `ListPicker`, `NumberInput`, `GrindDial`, `ConfirmDialog`,
-`Rating`, the services layer, the e-ink one-repaint rules.
+`Rating`, `ui/widgets/form_screen` (leaf editors only), the services layer, the
+e-ink one-repaint rules.
 
 ---
 

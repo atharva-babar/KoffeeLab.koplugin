@@ -63,8 +63,8 @@ end
 Design.pad = {
   card = scale(14), -- inside a card
   page = scale(16), -- page edge -> card
-  -- Legacy aliases: still referenced by screens not yet migrated to the v2 card
-  -- language (home, method_select, grind_dial, scroll_list). Removed in Phase D.
+  -- Smaller step values, kept for the modal widgets (grind_dial) and the
+  -- scroll_list head/text rows, which are not part of the card grid.
   lg = Size.padding.large,
   md = Size.padding.default,
   sm = Size.padding.small,

@@ -1,10 +1,12 @@
 -- ui/widgets/form_screen.lua
--- FormScreen — a scrolling list of labelled rows for long forms (TECH_SOLUTION
--- §2.1 rules 7/11). Each row shows `LABEL ............. current value`; tapping it
--- runs the field's editor (a ListPicker / NumberInput / DurationInput / …), which
--- writes back into `self.values` and calls `self:refreshItems()`. Built on
--- ui/screen_list so it scrolls (no pagination bar) and Back handling comes from
--- ScreenBase.
+-- FormScreen — a scrolling list of labelled rows for a small single-purpose form.
+-- The main Add/Edit flows use ui/widgets/wizard now; FormScreen is kept for the
+-- leaf editors (one brew step, one ingredient, the sensory screen, the grind
+-- dial's host, Brew Again, config entity forms). Each row shows
+-- `LABEL ....... current value`; tapping it runs the field's editor (a ListPicker
+-- / NumberInput / DurationInput / …), which writes back into `self.values` and
+-- calls `self:refreshItems()`. Built on ui/screen_list (rows render as cards, no
+-- pagination bar); Back handling comes from ScreenBase.
 --
 --   local screen = FormScreen:new{
 --     title = _("New Pour Over"),
