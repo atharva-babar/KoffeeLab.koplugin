@@ -18,7 +18,17 @@ function KoffeeLab:init()
   require("ui/paths").root = self.path
   -- Open + migrate the database once per session (TECH_SOLUTION §3.3). A failure
   -- is non-fatal: the menu entry still registers and reports the error on open.
-  Bootstrap.ensure()
+  if Bootstrap.ensure() then
+    -- First run (or just after a schema rebuild): fill the catalogue with sample
+    -- recipes/drinks so there is something to browse. Best-effort.
+    local SampleData = require("services/sample_data")
+    if not SampleData.loaded() then
+      local ok, err = SampleData.load()
+      if not ok then
+        logger.warn("KoffeeLab: sample data load failed:", tostring(err))
+      end
+    end
+  end
   self.ui.menu:registerToMainMenu(self)
 end
 

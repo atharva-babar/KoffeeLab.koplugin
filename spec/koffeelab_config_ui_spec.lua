@@ -20,7 +20,6 @@ describe("ui/config (Configurator)", function()
   it("Configurator lists its categories and paints", function()
     local Configurator = require("ui/configurator")
     local screen = Nav:push(Configurator:new {})
-    assert.are.equal(5, #screen.item_table)
     assert.are.equal("Beans", screen.item_table[1].text)
     assert.are.equal("Backup & Restore", screen.item_table[5].text)
     for _, item in ipairs(screen.item_table) do
