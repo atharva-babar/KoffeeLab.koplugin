@@ -90,7 +90,7 @@ describe("empty & error states (Phase 10)", function()
       local RecipeIndex = require("ui/recipe/index")
       local ri = RecipeIndex:new {}
       ri.search = "zzz-nope"
-      ri:switchItemTable(nil, ri:_items(), 1)
+      ri:refresh()
       assert.is_truthy(find_row(ri, "No recipes match"))
     end)
   end)

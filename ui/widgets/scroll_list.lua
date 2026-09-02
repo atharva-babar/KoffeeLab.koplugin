@@ -1,0 +1,209 @@
+-- ui/widgets/scroll_list.lua
+-- A vertical list with no pagination bar — the KoffeeLab replacement for the
+-- Menu-based full-screen screens. Same item shape those screens already use:
+--
+--   ScrollList:new{
+--     width = w, height = h,          -- viewport
+--     show_parent = screen,           -- the ScreenBase hosting this
+--     items = {
+--       { text = "Dose", mandatory = "18 g", on_tap = fn },       -- normal row
+--       { text = "Brew steps", mandatory = "3", kind = "head" },  -- section header, inert
+--       { text = "bright, tea-like", kind = "text" },             -- wrapped body, inert
+--     },
+--   }
+--
+-- The host screen forwards `self.cropping_widget` (a ScrollableContainer) so
+-- UIManager clips inner repaints. `:setItems()` rebuilds + repaints once;
+-- `:rows()` returns the raw items array for specs.
+
+local Design = require("ui/design")
+local Device = require("device")
+local FrameContainer = require("ui/widget/container/framecontainer")
+local Geom = require("ui/geometry")
+local GestureRange = require("ui/gesturerange")
+local HorizontalGroup = require("ui/widget/horizontalgroup")
+local HorizontalSpan = require("ui/widget/horizontalspan")
+local InputContainer = require("ui/widget/container/inputcontainer")
+local LineWidget = require("ui/widget/linewidget")
+local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
+local TextBoxWidget = require("ui/widget/textboxwidget")
+local TextWidget = require("ui/widget/textwidget")
+local UIManager = require("ui/uimanager")
+local VerticalGroup = require("ui/widget/verticalgroup")
+
+local ScrollList = InputContainer:extend {
+  width = nil,
+  height = nil,
+  items = nil,
+  show_parent = nil,
+}
+
+function ScrollList:init()
+  self.items = self.items or {}
+  self._pad = Design.pad.md
+  -- reserve room for the vertical scrollbar the ScrollableContainer draws over
+  -- the content when the list overflows (3 * its bar width)
+  self._content_w = self.width - 3 * ScrollableContainer.scroll_bar_width
+  self:_build()
+end
+
+local function hairline(w)
+  return LineWidget:new {
+    dimen = Geom:new { w = w, h = Design.border },
+    background = Design.color.hairline,
+  }
+end
+
+-- One tappable normal row: LABEL ................ value, with a bottom hairline.
+function ScrollList:_normalRow(item)
+  local inner_w = self._content_w - 2 * self._pad
+  local gap = Design.pad.md
+  local right, right_w = nil, 0
+  if item.mandatory and item.mandatory ~= "" then
+    right = TextWidget:new {
+      text = tostring(item.mandatory),
+      face = Design.face("label"),
+      fgcolor = Design.color.muted,
+      max_width = math.floor(inner_w * 0.55),
+      truncate_left = true,
+    }
+    right_w = right:getSize().w
+  end
+  local left = TextWidget:new {
+    text = tostring(item.text or ""),
+    face = Design.face("body"),
+    max_width = inner_w - right_w - (right_w > 0 and gap or 0),
+  }
+
+  local content = HorizontalGroup:new { align = "center", left }
+  if right then
+    content[#content + 1] =
+      HorizontalSpan:new { width = math.max(gap, inner_w - left:getSize().w - right_w) }
+    content[#content + 1] = right
+  end
+
+  local frame = FrameContainer:new {
+    bordersize = 0,
+    padding = self._pad,
+    margin = 0,
+    width = self._content_w,
+    background = Design.color.bg,
+    content,
+  }
+
+  local row = frame
+  if item.on_tap and Device:isTouchDevice() then
+    row = InputContainer:new {}
+    row[1] = frame
+    row.ges_events.Tap = {
+      GestureRange:new {
+        ges = "tap",
+        range = function()
+          return frame.dimen
+        end,
+      },
+    }
+    row.onTap = function()
+      UIManager:setDirty(self.show_parent or self, "ui")
+      item.on_tap()
+      return true
+    end
+  end
+
+  return VerticalGroup:new { align = "left", row, hairline(self._content_w) }
+end
+
+function ScrollList:_headRow(item)
+  local inner_w = self._content_w - 2 * self._pad
+  local gap = Design.pad.md
+  local right, right_w = nil, 0
+  if item.mandatory and item.mandatory ~= "" then
+    right = TextWidget:new {
+      text = tostring(item.mandatory),
+      face = Design.face("label"),
+      fgcolor = Design.color.muted,
+    }
+    right_w = right:getSize().w
+  end
+  local left = TextWidget:new {
+    text = tostring(item.text or ""),
+    face = Design.face("title"),
+    max_width = inner_w - right_w - (right_w > 0 and gap or 0),
+  }
+  local content = HorizontalGroup:new { align = "center", left }
+  if right then
+    content[#content + 1] =
+      HorizontalSpan:new { width = math.max(gap, inner_w - left:getSize().w - right_w) }
+    content[#content + 1] = right
+  end
+  return FrameContainer:new {
+    bordersize = 0,
+    padding = self._pad,
+    padding_top = Design.pad.lg,
+    margin = 0,
+    width = self._content_w,
+    background = Design.color.bg,
+    content,
+  }
+end
+
+function ScrollList:_textRow(item)
+  return FrameContainer:new {
+    bordersize = 0,
+    padding = self._pad,
+    padding_left = self._pad + Design.pad.md,
+    margin = 0,
+    width = self._content_w,
+    background = Design.color.bg,
+    TextBoxWidget:new {
+      text = tostring(item.text or ""),
+      face = Design.face("body"),
+      fgcolor = Design.color.muted,
+      width = self._content_w - 2 * self._pad - Design.pad.md,
+    },
+  }
+end
+
+function ScrollList:_build()
+  local group = VerticalGroup:new { align = "left" }
+  local grid = {}
+  local y = 0
+  for _, item in ipairs(self.items) do
+    local w
+    if item.kind == "head" then
+      w = self:_headRow(item)
+    elseif item.kind == "text" then
+      w = self:_textRow(item)
+    else
+      w = self:_normalRow(item)
+    end
+    group[#group + 1] = w
+    local h = w:getSize().h
+    grid[#grid + 1] = { top = y, bottom = y + h - 1 }
+    y = y + h
+  end
+  self._group = group
+
+  self.cropping_widget = ScrollableContainer:new {
+    dimen = Geom:new { w = self.width, h = self.height },
+    show_parent = self.show_parent or self,
+    step_scroll_grid = grid,
+    group,
+  }
+  self[1] = self.cropping_widget
+  self.dimen = Geom:new { w = self.width, h = self.height }
+end
+
+--- Rebuild from a new items array and repaint once.
+function ScrollList:setItems(items)
+  self.items = items or {}
+  self:_build()
+  UIManager:setDirty(self.show_parent or self, "ui")
+end
+
+--- The raw items array (for specs / callers that inspect content).
+function ScrollList:rows()
+  return self.items
+end
+
+return ScrollList

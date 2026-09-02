@@ -1,17 +1,16 @@
 -- ui/drink/index.lua
--- Custom-drink index (TECH_SOLUTION §2.14). One full-screen Menu: three control
--- rows (temperature filter, ingredient filter, sort — no brew count for drinks)
--- followed by the result rows rendering `base recipe · <rating> · Hot/Cold`.
--- Tapping a result opens ui/drink/detail. Data through drink_service /
--- search_service — no SQL here.
+-- Custom-drink index (TECH_SOLUTION §2.14). A scrolling list: three control rows
+-- (temperature filter, ingredient filter, sort) followed by the result rows
+-- rendering `base recipe · <rating> · Hot/Cold`. Tapping a result opens
+-- ui/drink/detail. Data through drink_service / search_service.
 
 local Constants = require("util/constants")
 local ConfigService = require("services/config_service")
 local Format = require("util/format")
 local ListPicker = require("ui/widgets/list_picker")
-local Menu = require("ui/widget/menu")
+local Nav = require("ui/nav")
+local ScreenList = require("ui/screen_list")
 local SearchService = require("services/search_service")
-local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local SORT_ORDER = { "updated", "rating", "title" }
@@ -21,14 +20,8 @@ local SORT_LABELS = {
   title = _("Title"),
 }
 
-local DrinkIndex = Menu:extend {
+local DrinkIndex = ScreenList:extend {
   name = "koffeelab_drink_index",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Custom Drinks"),
 }
 
@@ -38,8 +31,7 @@ function DrinkIndex:init()
   self.sort = "updated"
   local ok, ingredients = ConfigService.ingredients.list {}
   self.ingredients = ok and ingredients or {}
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
 function DrinkIndex:_temp_label()
@@ -69,19 +61,32 @@ local function row_note(d)
   return table.concat(parts, "  \u{00B7}  ")
 end
 
-function DrinkIndex:_items()
+function DrinkIndex:buildItems()
   local items = {
     {
       text = _("Temperature:  ") .. self:_temp_label(),
       mandatory = "\u{203A}",
       _ctl = "temperature",
+      callback = function()
+        self:_pickTemperature()
+      end,
     },
     {
       text = _("Ingredient:  ") .. self:_ingredient_label(),
       mandatory = "\u{203A}",
       _ctl = "ingredient",
+      callback = function()
+        self:_pickIngredient()
+      end,
     },
-    { text = _("Sort:  ") .. SORT_LABELS[self.sort], mandatory = "\u{203A}", _ctl = "sort" },
+    {
+      text = _("Sort:  ") .. SORT_LABELS[self.sort],
+      mandatory = "\u{203A}",
+      _ctl = "sort",
+      callback = function()
+        self:_pickSort()
+      end,
+    },
   }
 
   local ok, rows = SearchService.drinks {
@@ -90,25 +95,34 @@ function DrinkIndex:_items()
     sort = self.sort,
   }
   rows = ok and rows or {}
-  items[#items + 1] = { text = _("Drinks"), mandatory = tostring(#rows), _head = true }
+  items[#items + 1] = { text = _("Drinks"), mandatory = tostring(#rows), kind = "head" }
   if #rows == 0 then
     local unfiltered = self.temperature_mode == nil and self.ingredient_id == nil
     items[#items + 1] = {
-      text = unfiltered and _("  No custom drinks yet. Add one from the Home screen.")
-        or _("  No drinks match this filter."),
-      _inert = true,
+      text = unfiltered and _("No custom drinks yet. Add one from the Home screen.")
+        or _("No drinks match this filter."),
+      kind = "text",
     }
   end
   for _idx, d in ipairs(rows) do -- luacheck: ignore _idx
-    items[#items + 1] = { text = d.title, mandatory = row_note(d), _drink_id = d.id }
+    items[#items + 1] = {
+      text = d.title,
+      mandatory = row_note(d),
+      _drink_id = d.id,
+      callback = function()
+        Nav:push(require("ui/drink/detail"):new {
+          drink_id = d.id,
+          on_changed = function()
+            self:refresh()
+          end,
+        })
+      end,
+    }
   end
   return items
 end
 
-function DrinkIndex:_refresh()
-  local keep = math.max(1, ((self.page or 1) - 1) * (self.perpage or 1) + 1)
-  self:switchItemTable(self.title, self:_items(), keep)
-end
+DrinkIndex._refresh = ScreenList.refresh
 
 function DrinkIndex:_pickTemperature()
   ListPicker.show {
@@ -121,7 +135,7 @@ function DrinkIndex:_pickTemperature()
     current = self.temperature_mode or false,
     on_select = function(value)
       self.temperature_mode = value or nil
-      self:_refresh()
+      self:refresh()
     end,
   }
 end
@@ -137,7 +151,7 @@ function DrinkIndex:_pickIngredient()
     current = self.ingredient_id or false,
     on_select = function(value)
       self.ingredient_id = value or nil
-      self:_refresh()
+      self:refresh()
     end,
   }
 end
@@ -153,42 +167,9 @@ function DrinkIndex:_pickSort()
     current = self.sort,
     on_select = function(value)
       self.sort = value
-      self:_refresh()
+      self:refresh()
     end,
   }
 end
-
-function DrinkIndex:onMenuChoice(item)
-  if item._inert or item._head then
-    return true
-  end
-  if item._ctl == "temperature" then
-    self:_pickTemperature()
-  elseif item._ctl == "ingredient" then
-    self:_pickIngredient()
-  elseif item._ctl == "sort" then
-    self:_pickSort()
-  elseif item._drink_id then
-    self.nav:push(require("ui/drink/detail"):new {
-      drink_id = item._drink_id,
-      on_changed = function()
-        self:_refresh()
-      end,
-    })
-  end
-  return true
-end
-
-function DrinkIndex:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-DrinkIndex.onClose = DrinkIndex._back
-DrinkIndex.onLeftButtonTap = DrinkIndex._back
 
 return DrinkIndex

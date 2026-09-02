@@ -1,17 +1,17 @@
 -- ui/recipe/index.lua
--- Base-recipe index (TECH_SOLUTION §1.21, §2.14). One full-screen Menu: three
--- control rows at the top (method filter, title search, sort) followed by the
--- result rows, each rendering `method · <rating> · N brews`. Tapping a result
--- opens ui/recipe/detail. All data comes through search_service — no SQL here.
--- Changing a control repaints the list once (e-ink safe — §2.1).
+-- Base-recipe index (TECH_SOLUTION §1.21, §2.14). A scrolling list: three control
+-- rows at the top (method filter, title search, sort) followed by the result
+-- rows, each rendering `method · <rating> · N brews`. Tapping a result opens
+-- ui/recipe/detail. All data comes through search_service. `favourites = true`
+-- narrows to starred recipes (the navbar Favourites tab).
 
 local Format = require("util/format")
 local ListPicker = require("ui/widgets/list_picker")
-local Menu = require("ui/widget/menu")
 local MethodService = require("services/method_service")
+local Nav = require("ui/nav")
+local ScreenList = require("ui/screen_list")
 local SearchService = require("services/search_service")
 local TextInput = require("ui/widgets/text_input")
-local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local SORT_ORDER = { "updated", "rating", "brew_count", "title" }
@@ -22,14 +22,8 @@ local SORT_LABELS = {
   title = _("Title"),
 }
 
-local RecipeIndex = Menu:extend {
+local RecipeIndex = ScreenList:extend {
   name = "koffeelab_recipe_index",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Base Coffee Recipes"),
 }
 
@@ -42,8 +36,7 @@ function RecipeIndex:init()
   end
   local ok, methods = MethodService.list()
   self.methods = ok and methods or {}
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
 function RecipeIndex:_method_label()
@@ -72,15 +65,32 @@ local function row_note(r)
   return table.concat(parts, "  \u{00B7}  ")
 end
 
-function RecipeIndex:_items()
+function RecipeIndex:buildItems()
   local items = {
-    { text = _("Method:  ") .. self:_method_label(), mandatory = "\u{203A}", _ctl = "method" },
+    {
+      text = _("Method:  ") .. self:_method_label(),
+      mandatory = "\u{203A}",
+      _ctl = "method",
+      callback = function()
+        self:_pickMethod()
+      end,
+    },
     {
       text = _("Search:  ") .. (self.search ~= "" and self.search or _("(all)")),
       mandatory = "\u{203A}",
       _ctl = "search",
+      callback = function()
+        self:_editSearch()
+      end,
     },
-    { text = _("Sort:  ") .. SORT_LABELS[self.sort], mandatory = "\u{203A}", _ctl = "sort" },
+    {
+      text = _("Sort:  ") .. SORT_LABELS[self.sort],
+      mandatory = "\u{203A}",
+      _ctl = "sort",
+      callback = function()
+        self:_pickSort()
+      end,
+    },
   }
 
   local ok, rows = SearchService.recipes {
@@ -90,29 +100,38 @@ function RecipeIndex:_items()
     favorite = self.favourites or nil,
   }
   rows = ok and rows or {}
-  items[#items + 1] = { text = _("Recipes"), mandatory = tostring(#rows), _head = true }
+  items[#items + 1] = { text = _("Recipes"), mandatory = tostring(#rows), kind = "head" }
   if #rows == 0 then
     local unfiltered = self.method_slug == nil and self.search == ""
     local msg
     if self.favourites then
-      msg = _("  No favourite recipes yet. Star a recipe from its detail screen.")
+      msg = _("No favourite recipes yet. Star a recipe from its detail screen.")
     elseif unfiltered then
-      msg = _("  No recipes yet. Add one from the Home screen.")
+      msg = _("No recipes yet. Add one from the Home screen.")
     else
-      msg = _("  No recipes match this filter.")
+      msg = _("No recipes match this filter.")
     end
-    items[#items + 1] = { text = msg, _inert = true }
+    items[#items + 1] = { text = msg, kind = "text" }
   end
   for _idx, r in ipairs(rows) do -- luacheck: ignore _idx
-    items[#items + 1] = { text = r.title, mandatory = row_note(r), _recipe_id = r.id }
+    items[#items + 1] = {
+      text = r.title,
+      mandatory = row_note(r),
+      _recipe_id = r.id,
+      callback = function()
+        Nav:push(require("ui/recipe/detail"):new {
+          recipe_id = r.id,
+          on_changed = function()
+            self:refresh()
+          end,
+        })
+      end,
+    }
   end
   return items
 end
 
-function RecipeIndex:_refresh()
-  local keep = math.max(1, ((self.page or 1) - 1) * (self.perpage or 1) + 1)
-  self:switchItemTable(self.title, self:_items(), keep)
-end
+RecipeIndex._refresh = ScreenList.refresh
 
 function RecipeIndex:_pickMethod()
   local items = { { text = _("All methods"), value = false } }
@@ -125,7 +144,7 @@ function RecipeIndex:_pickMethod()
     current = self.method_slug or false,
     on_select = function(value)
       self.method_slug = value or nil
-      self:_refresh()
+      self:refresh()
     end,
   }
 end
@@ -136,7 +155,7 @@ function RecipeIndex:_editSearch()
     value = self.search,
     on_ok = function(text)
       self.search = text or ""
-      self:_refresh()
+      self:refresh()
     end,
   }
 end
@@ -152,42 +171,9 @@ function RecipeIndex:_pickSort()
     current = self.sort,
     on_select = function(value)
       self.sort = value
-      self:_refresh()
+      self:refresh()
     end,
   }
 end
-
-function RecipeIndex:onMenuChoice(item)
-  if item._inert or item._head then
-    return true
-  end
-  if item._ctl == "method" then
-    self:_pickMethod()
-  elseif item._ctl == "search" then
-    self:_editSearch()
-  elseif item._ctl == "sort" then
-    self:_pickSort()
-  elseif item._recipe_id then
-    self.nav:push(require("ui/recipe/detail"):new {
-      recipe_id = item._recipe_id,
-      on_changed = function()
-        self:_refresh()
-      end,
-    })
-  end
-  return true
-end
-
-function RecipeIndex:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-RecipeIndex.onClose = RecipeIndex._back
-RecipeIndex.onLeftButtonTap = RecipeIndex._back
 
 return RecipeIndex

@@ -138,7 +138,7 @@ describe("ui/backup (Backup UI — Phase 9)", function()
 
     it("a menu tap routes to the backup action", function()
       local screen = Nav:push(Backup:new {})
-      assert.is_true(screen:onMenuChoice { _action = "backup_config" })
+      assert.is_true(screen:onMenuChoice(screen.item_table[1]))
       assert.are.equal(1, #files_matching(dir, "%.json$"))
     end)
   end)

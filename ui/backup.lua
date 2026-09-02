@@ -19,30 +19,52 @@
 local BackupService = require("services/backup_service")
 local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local InfoMessage = require("ui/widget/infomessage")
-local Menu = require("ui/widget/menu")
+local ScreenList = require("ui/screen_list")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
-local Backup = Menu:extend {
+local Backup = ScreenList:extend {
   name = "koffeelab_backup",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Backup & Restore"),
 }
 
-function Backup:init()
-  self.item_table = {
-    { text = _("Back up configuration"), _action = "backup_config" },
-    { text = _("Back up recipes & history"), _action = "backup_recipes" },
-    { text = _("Back up the whole database"), _action = "backup_file" },
-    { text = _("Restore from a JSON backup"), _action = "restore_json" },
-    { text = _("Restore from a database file"), _action = "restore_file" },
+function Backup:buildItems()
+  return {
+    {
+      text = _("Back up configuration"),
+      callback = function()
+        self:_backup("configuration")
+      end,
+    },
+    {
+      text = _("Back up recipes & history"),
+      callback = function()
+        self:_backup("recipes")
+      end,
+    },
+    {
+      text = _("Back up the whole database"),
+      callback = function()
+        self:_backup("file")
+      end,
+    },
+    {
+      text = _("Restore from a JSON backup"),
+      callback = function()
+        self:_pickFile({ ".json" }, function(path)
+          self:_restoreJson(path)
+        end)
+      end,
+    },
+    {
+      text = _("Restore from a database file"),
+      callback = function()
+        self:_pickFile({ ".sqlite3", ".sqlite" }, function(path)
+          self:_restoreFile(path)
+        end)
+      end,
+    },
   }
-  Menu.init(self)
 end
 
 local function info(text)
@@ -193,37 +215,5 @@ function Backup:_pickFile(exts, on_pick)
     end,
   })
 end
-
-function Backup:onMenuChoice(item)
-  local action = item and item._action
-  if action == "backup_config" then
-    self:_backup("configuration")
-  elseif action == "backup_recipes" then
-    self:_backup("recipes")
-  elseif action == "backup_file" then
-    self:_backup("file")
-  elseif action == "restore_json" then
-    self:_pickFile({ ".json" }, function(path)
-      self:_restoreJson(path)
-    end)
-  elseif action == "restore_file" then
-    self:_pickFile({ ".sqlite3", ".sqlite" }, function(path)
-      self:_restoreFile(path)
-    end)
-  end
-  return true
-end
-
-function Backup:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-Backup.onClose = Backup._back
-Backup.onLeftButtonTap = Backup._back
 
 return Backup

@@ -1,8 +1,8 @@
 -- ui/recipe/detail.lua
 -- Read-only recipe view plus the action rows (Brew Again / Add Observation /
--- Brew history / Favourite / Edit / Delete). Built on Menu; informational rows
--- are inert. Derived values (ratio, step duration, cumulative water) are
--- computed here, never stored.
+-- Brew history / Favourite / Edit / Delete). A scrolling list grouped into
+-- sections; informational rows are inert. Derived values (ratio, step duration,
+-- cumulative water) are computed here, never stored.
 
 local AddFlow = require("ui/recipe/add_flow")
 local BrewAgain = require("ui/recipe/brew_again")
@@ -11,20 +11,14 @@ local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local Constants = require("util/constants")
 local Derive = require("methods/derive")
 local Format = require("util/format")
-local Menu = require("ui/widget/menu")
 local Methods = require("methods/init")
 local RecipeService = require("services/recipe_service")
+local ScreenList = require("ui/screen_list")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
-local RecipeDetail = Menu:extend {
+local RecipeDetail = ScreenList:extend {
   name = "koffeelab_recipe_detail",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   recipe_id = nil,
   on_changed = nil,
 }
@@ -32,8 +26,7 @@ local RecipeDetail = Menu:extend {
 function RecipeDetail:init()
   self:_fetch()
   self.title = self.recipe and self.recipe.title or _("Recipe")
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
 function RecipeDetail:_fetch()
@@ -72,14 +65,17 @@ local function param_value(param, raw)
   return tostring(raw)
 end
 
-function RecipeDetail:_items()
+function RecipeDetail:buildItems()
   local m = self.recipe
   if not m then
-    return { { text = _("Recipe not found. It may have been deleted."), _inert = true } }
+    return {
+      { text = _("Recipe not found. It may have been deleted."), kind = "text", _inert = true },
+    }
   end
   local method = m.method or Methods.get(m.method_slug)
   local items = {}
 
+  items[#items + 1] = { text = _("Brew"), kind = "head" }
   items[#items + 1] = row(_("Method"), m.method_name)
   if self.bean then
     items[#items + 1] = row(_("Bean"), self.bean.name)
@@ -111,15 +107,15 @@ function RecipeDetail:_items()
   for _, p in ipairs(method and method.params or {}) do
     local v = param_value(p, m.spec and m.spec[p.key])
     if v ~= nil then
-      items[#items + 1] = row("  " .. p.label, v)
+      items[#items + 1] = row(p.label, v)
     end
   end
 
   if #(m.steps or {}) > 0 then
     local total_water = Derive.total_water(m.steps)
-    items[#items + 1] = { text = _("Brew steps"), mandatory = tostring(#m.steps), _head = true }
+    items[#items + 1] = { text = _("Brew steps"), mandatory = tostring(#m.steps), kind = "head" }
     for i, step in ipairs(m.steps) do
-      local head = string.format("  #%d  %s", i, Methods.step_label(step.step_type))
+      local head = string.format("#%d  %s", i, Methods.step_label(step.step_type))
       local note = {}
       if step.start_time then
         note[#note + 1] = Format.duration(step.start_time)
@@ -139,8 +135,8 @@ function RecipeDetail:_items()
 
   if m.output_note and m.output_note ~= "" then
     local label = method and method.output_note and method.output_note.label or _("Expected result")
-    items[#items + 1] = { text = label, mandatory = "", _head = true }
-    items[#items + 1] = { text = "  " .. m.output_note }
+    items[#items + 1] = { text = label, kind = "head" }
+    items[#items + 1] = { text = m.output_note, kind = "text" }
   end
 
   local sensory = {}
@@ -150,8 +146,8 @@ function RecipeDetail:_items()
     end
   end
   if #sensory > 0 then
-    items[#items + 1] = { text = _("Sensory"), mandatory = "", _head = true }
-    items[#items + 1] = { text = "  " .. table.concat(sensory, "   ") }
+    items[#items + 1] = { text = _("Sensory"), kind = "head" }
+    items[#items + 1] = { text = table.concat(sensory, "   "), kind = "text" }
   end
   if m.overall_rating ~= nil then
     items[#items + 1] = row(_("Overall"), Format.rating_stars(m.overall_rating))
@@ -166,11 +162,12 @@ function RecipeDetail:_items()
   end
 
   if m.notes and m.notes ~= "" then
-    items[#items + 1] = { text = _("Notes"), mandatory = "", _head = true }
-    items[#items + 1] = { text = "  " .. m.notes }
+    items[#items + 1] = { text = _("Notes"), kind = "head" }
+    items[#items + 1] = { text = m.notes, kind = "text" }
   end
 
   local stats = m.stats or {}
+  items[#items + 1] = { text = _("History"), kind = "head" }
   items[#items + 1] = row(_("Brew count"), tonumber(stats.brew_count) or 0)
   if stats.avg_session_rating then
     items[#items + 1] =
@@ -178,26 +175,63 @@ function RecipeDetail:_items()
   end
 
   local fav = tonumber(m.is_favorite) == 1
-  items[#items + 1] = { text = _("Brew Again"), mandatory = "\u{203A}", _action = "brew_again" }
-  items[#items + 1] = { text = _("Add Observation"), mandatory = "\u{203A}", _action = "observe" }
+  items[#items + 1] = { text = _("Actions"), kind = "head" }
+  items[#items + 1] = {
+    text = _("Brew Again"),
+    mandatory = "\u{203A}",
+    _action = "brew_again",
+    callback = function()
+      self:_brew(_("Brew Again"))
+    end,
+  }
+  items[#items + 1] = {
+    text = _("Add Observation"),
+    mandatory = "\u{203A}",
+    _action = "observe",
+    callback = function()
+      self:_brew(_("Add Observation"))
+    end,
+  }
   items[#items + 1] = {
     text = _("Brew history"),
     mandatory = (tonumber(stats.brew_count) or 0) .. "  \u{203A}",
     _action = "history",
+    callback = function()
+      self:_openHistory()
+    end,
   }
   items[#items + 1] = {
     text = fav and _("Remove from Favourites") or _("Add to Favourites"),
     mandatory = fav and "\u{2605}" or "\u{2606}",
     _action = "favorite",
+    callback = function()
+      RecipeService.set_favorite(self.recipe_id, not fav)
+      self:_afterSessionChange()
+    end,
   }
-  items[#items + 1] = { text = _("Edit"), mandatory = "\u{203A}", _action = "edit" }
-  items[#items + 1] = { text = _("Delete"), mandatory = "\u{203A}", _action = "delete" }
+  items[#items + 1] = {
+    text = _("Edit"),
+    mandatory = "\u{203A}",
+    _action = "edit",
+    callback = function()
+      self:_edit()
+    end,
+  }
+  items[#items + 1] = {
+    text = _("Delete"),
+    mandatory = "\u{203A}",
+    _action = "delete",
+    callback = function()
+      self:_delete()
+    end,
+  }
   return items
 end
 
 function RecipeDetail:_reload()
   self:_fetch()
-  self:switchItemTable(self.recipe and self.recipe.title or _("Recipe"), self:_items(), 1)
+  self.title = self.recipe and self.recipe.title or _("Recipe")
+  self:refresh()
 end
 
 function RecipeDetail:_afterSessionChange()
@@ -207,88 +241,74 @@ function RecipeDetail:_afterSessionChange()
   end
 end
 
-function RecipeDetail:onMenuChoice(item)
-  local action = item._action
+function RecipeDetail:_brew(title)
   local stats = self.recipe and self.recipe.stats or {}
-  if action == "brew_again" or action == "observe" then
-    BrewAgain.open(self.recipe_id, {
-      title = action == "observe" and _("Add Observation") or _("Brew Again"),
-      brew_count = tonumber(stats.brew_count) or 0,
-      on_saved = function()
-        self:_afterSessionChange()
-      end,
-    })
-  elseif action == "history" then
-    local screen = require("ui/recipe/history"):new {
-      recipe_id = self.recipe_id,
-      on_changed = function()
-        self:_afterSessionChange()
-      end,
-    }
-    if self.nav then
-      self.nav:push(screen)
-    else
-      UIManager:show(screen)
-    end
-  elseif action == "favorite" then
-    local now_fav = tonumber(self.recipe.is_favorite) ~= 1
-    RecipeService.set_favorite(self.recipe_id, now_fav)
-    self:_afterSessionChange()
-  elseif action == "edit" then
-    ConfirmDialog.confirm {
-      text = _("Edit recipe?\n\nExisting recipe data will be changed."),
-      ok_text = _("Continue"),
-      on_confirm = function()
-        AddFlow.edit(self.recipe_id, {
-          on_saved = function()
-            if self.on_changed then
-              self.on_changed()
-            end
-            self:_reload()
-          end,
-        })
-      end,
-    }
-  elseif action == "delete" then
-    ConfirmDialog.destructive {
-      text = _(
-        "Delete recipe?\n\nThis will remove the recipe and its associated brew-session history."
-      ),
-      ok_text = _("Delete"),
-      on_confirm = function()
-        local ok, err = RecipeService.delete(self.recipe_id)
-        if not ok then
-          ConfirmDialog.blocked {
-            text = _("Cannot delete — this recipe is ") .. tostring(err) .. _(
-              ".\nRemove or change those drinks first."
-            ),
-          }
-          return
-        end
-        if self.on_changed then
-          self.on_changed()
-        end
-        if self.nav then
-          self.nav:pop()
-        else
-          UIManager:close(self)
-        end
-      end,
-    }
-  end
-  return true
+  BrewAgain.open(self.recipe_id, {
+    title = title,
+    brew_count = tonumber(stats.brew_count) or 0,
+    on_saved = function()
+      self:_afterSessionChange()
+    end,
+  })
 end
 
-function RecipeDetail:_back()
+function RecipeDetail:_openHistory()
+  local screen = require("ui/recipe/history"):new {
+    recipe_id = self.recipe_id,
+    on_changed = function()
+      self:_afterSessionChange()
+    end,
+  }
   if self.nav then
-    self.nav:pop()
+    self.nav:push(screen)
   else
-    UIManager:close(self)
+    UIManager:show(screen)
   end
-  return true
 end
 
-RecipeDetail.onClose = RecipeDetail._back
-RecipeDetail.onLeftButtonTap = RecipeDetail._back
+function RecipeDetail:_edit()
+  ConfirmDialog.confirm {
+    text = _("Edit recipe?\n\nExisting recipe data will be changed."),
+    ok_text = _("Continue"),
+    on_confirm = function()
+      AddFlow.edit(self.recipe_id, {
+        on_saved = function()
+          if self.on_changed then
+            self.on_changed()
+          end
+          self:_reload()
+        end,
+      })
+    end,
+  }
+end
+
+function RecipeDetail:_delete()
+  ConfirmDialog.destructive {
+    text = _(
+      "Delete recipe?\n\nThis will remove the recipe and its associated brew-session history."
+    ),
+    ok_text = _("Delete"),
+    on_confirm = function()
+      local ok, err = RecipeService.delete(self.recipe_id)
+      if not ok then
+        ConfirmDialog.blocked {
+          text = _("Cannot delete — this recipe is ") .. tostring(err) .. _(
+            ".\nRemove or change those drinks first."
+          ),
+        }
+        return
+      end
+      if self.on_changed then
+        self.on_changed()
+      end
+      if self.nav then
+        self.nav:pop()
+      else
+        UIManager:close(self)
+      end
+    end,
+  }
+end
 
 return RecipeDetail

@@ -96,6 +96,9 @@ function ScreenBase:init()
     -- UIManager clips inner repaints/inverts against this
     self.cropping_widget = self.scroll_container
     content = self.scroll_container
+  elseif content.cropping_widget then
+    -- the content widget manages its own scrolling (e.g. ui/widgets/scroll_list)
+    self.cropping_widget = content.cropping_widget
   end
 
   local body = VerticalGroup:new {
