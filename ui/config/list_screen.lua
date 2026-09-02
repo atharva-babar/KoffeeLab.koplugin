@@ -17,6 +17,7 @@ local _ = require("gettext")
 
 local ListScreen = ScreenList:extend {
   name = "koffeelab_config_list",
+  navbar = { "home", "back" },
   add_text = nil,
   empty_text = nil,
 }

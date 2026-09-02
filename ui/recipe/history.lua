@@ -16,6 +16,7 @@ local _ = require("gettext")
 local History = ScreenList:extend {
   name = "koffeelab_recipe_history",
   title = _("Brew History"),
+  navbar = { "home", "back" }, -- nothing to filter / sort here
   recipe_id = nil, -- required
   on_changed = nil, -- optional: called after a session is deleted
 }

@@ -7,6 +7,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local Nav = require("ui/nav")
 local ScreenList = require("ui/screen_list")
 local UIManager = require("ui/uimanager")
+local Version = require("version")
 local _ = require("gettext")
 
 local Configurator = ScreenList:extend {
@@ -37,6 +38,15 @@ function Configurator:buildItems()
       end,
     }
   end
+  items[#items + 1] = { text = _("About"), kind = "head" }
+  items[#items + 1] = {
+    text = _("About KoffeeLab"),
+    mandatory = "\u{203A}",
+    callback = function()
+      self:_showAbout()
+    end,
+  }
+
   items[#items + 1] = { text = _("Developer"), kind = "head" }
   items[#items + 1] = {
     text = _("Load sample data"),
@@ -46,6 +56,20 @@ function Configurator:buildItems()
     end,
   }
   return items
+end
+
+function Configurator:_showAbout()
+  UIManager:show(InfoMessage:new {
+    text = _("KoffeeLab")
+      .. "\n"
+      .. _(
+        "Local-first coffee recipe catalogue with brew history, tasting notes and custom drinks."
+      )
+      .. "\n\n"
+      .. _("KOReader")
+      .. " "
+      .. tostring(Version:getCurrentRevision()),
+  })
 end
 
 function Configurator:_loadSample()

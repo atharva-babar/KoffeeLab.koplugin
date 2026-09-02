@@ -137,25 +137,16 @@ describe("ui brew history (Phase 7)", function()
       })
       sw:paintTo(Screen.bb, 0, 0)
 
-      local function tap(act)
-        for _, item in ipairs(sw.item_table) do
-          if item._act == act then
-            sw:onMenuChoice(item)
-            return
-          end
-        end
-        error("no action row: " .. act)
-      end
-
       assert.are.equal("idle", sw.state)
-      tap("start")
+      assert.is_not_nil(sw.action_tiles.start)
+      sw:_do("start")
       assert.are.equal("running", sw.state)
       -- fake two split marks (os.time() resolution is coarse for a unit test)
       sw.splits = { 32, 70 }
       sw.start_time = sw.start_time - 165
-      tap("stop")
+      sw:_do("stop")
       assert.are.equal("stopped", sw.state)
-      tap("use")
+      sw:_do("use")
 
       assert.is_table(captured)
       assert.is_true(captured.elapsed >= 165)
@@ -168,11 +159,7 @@ describe("ui brew history (Phase 7)", function()
       sw.state = "stopped"
       sw.elapsed = 90
       sw.splits = { 10, 20 }
-      for _, item in ipairs(sw:_items()) do
-        if item._act == "restart" then
-          sw:onMenuChoice(item)
-        end
-      end
+      sw:_do("restart")
       assert.are.equal("idle", sw.state)
       assert.are.equal(0, sw.elapsed)
       assert.are.equal(0, #sw.splits)
