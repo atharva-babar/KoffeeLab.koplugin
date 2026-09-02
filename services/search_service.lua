@@ -1,9 +1,8 @@
 -- services/search_service.lua
--- One entry point for the two index screens (§1.21, §2.14). It normalises the
--- caller's filter/sort options and delegates to the recipe / drink repos, which own
--- the LIKE-escaped, parameterised queries.
+-- One entry point for the two index screens. Normalises the caller's filter/sort
+-- options and delegates to the repos, which own the parameterised queries.
 
-local RecipeRepo = require("db/repo/recipe")
+local RecipeService = require("services/recipe_service")
 local DrinkRepo = require("db/repo/drink")
 local Support = require("services/support")
 
@@ -21,17 +20,17 @@ local function allowed(list, value, fallback)
   return fallback
 end
 
---- @param opts { method_id?, search?, sort? }
 function SearchService.recipes(opts)
   opts = opts or {}
-  return Support.ok(RecipeRepo.list_for_index {
-    method_id = opts.method_id,
+  return RecipeService.list_for_index {
+    method_slug = opts.method_slug,
+    favorite = opts.favorite,
     search = opts.search,
     sort = allowed(SearchService.RECIPE_SORTS, opts.sort, "updated"),
-  })
+    limit = opts.limit,
+  }
 end
 
---- @param opts { temperature_mode?, ingredient_id?, search?, sort? }
 function SearchService.drinks(opts)
   opts = opts or {}
   local mode = opts.temperature_mode

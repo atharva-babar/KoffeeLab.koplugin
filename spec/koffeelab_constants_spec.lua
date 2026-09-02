@@ -2,15 +2,12 @@ require("koffeelab.spec_helper")
 local Constants = require("util/constants")
 
 describe("util/constants", function()
-  it("lists the §1.12 built-in step types with a label for each", function()
-    assert.are.equal(15, #Constants.STEP_TYPES)
-    for _, step_type in ipairs(Constants.STEP_TYPES) do
-      assert.is_string(Constants.STEP_TYPE_LABELS[step_type])
-    end
+  it("labels the step types used across methods", function()
     assert.are.equal("Bloom", Constants.STEP_TYPE_LABELS.bloom)
+    assert.are.equal("Pre-infuse", Constants.STEP_TYPE_LABELS.preinfuse)
   end)
 
-  it("maps the five §0.12 roast levels", function()
+  it("maps the five roast levels", function()
     assert.are.equal(5, #Constants.ROAST_LEVELS)
     assert.are.equal("Very Light", Constants.ROAST_LABELS[1])
     assert.are.equal("Dark", Constants.ROAST_LABELS[5])
@@ -31,10 +28,8 @@ describe("util/constants", function()
     assert.are.same({ "acidity", "sweetness", "strength", "body", "brightness" }, keys)
   end)
 
-  it("names the five system methods", function()
-    assert.are.same(
-      { "pour_over", "aeropress", "french_press", "espresso", "cold_brew" },
-      Constants.SYSTEM_METHOD_SLUGS
-    )
+  it("offers ingredient units", function()
+    assert.is_true(#Constants.INGREDIENT_UNITS > 1)
+    assert.are.equal("g", Constants.INGREDIENT_UNITS[1])
   end)
 end)

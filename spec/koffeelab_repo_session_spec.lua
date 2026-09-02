@@ -7,7 +7,7 @@ describe("db/repo/session", function()
 
   before_each(function()
     local ids = helper.recipe_ready()
-    recipe = assert(Recipe.create { title = "R", method_id = ids.method_id, dose_g = 15 })
+    recipe = assert(Recipe.create { title = "R", method_slug = ids.method_slug, dose_g = 15 })
   end)
 
   after_each(function()

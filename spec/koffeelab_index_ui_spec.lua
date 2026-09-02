@@ -18,7 +18,7 @@ local DrinkDetail = require("ui/drink/detail")
 local function draft_for(slug, ids, overrides)
   local _, method = MethodService.get_by_slug(slug)
   local recipe = {
-    method_id = method.id,
+    method_slug = method.slug,
     title = (overrides and overrides.title) or ("Test " .. slug),
     bean_id = ids.bean_id,
     grinder_id = ids.grinder_id,
@@ -31,7 +31,7 @@ local function draft_for(slug, ids, overrides)
     overall_rating = overrides and overrides.rating or nil,
     notes = "",
   }
-  return { recipe = recipe, method = method, steps = {}, params = {}, flavor_tag_ids = {} }
+  return { recipe = recipe, method = method, steps = {}, spec = {}, flavor_tag_ids = {} }
 end
 
 local function make_recipe(slug, ids, overrides)
@@ -97,10 +97,9 @@ describe("ui index / search (Phase 6)", function()
     it("filters by method", function()
       make_recipe("pour_over", ids)
       make_recipe("espresso", ids)
-      local _, espresso = MethodService.get_by_slug("espresso")
 
       local screen = Nav:push(RecipeIndex:new {})
-      screen.method_id = espresso.id
+      screen.method_slug = "espresso"
       screen:_refresh()
 
       local titles = result_titles(screen, "_recipe_id")

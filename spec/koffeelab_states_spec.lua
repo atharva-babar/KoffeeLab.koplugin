@@ -6,7 +6,6 @@ local Screen = require("device").screen
 local ConfigService = require("services/config_service")
 local RecipeService = require("services/recipe_service")
 local DrinkService = require("services/drink_service")
-local MethodService = require("services/method_service")
 local RecipeRepo = require("db/repo/recipe")
 local DrinkRepo = require("db/repo/drink")
 
@@ -126,10 +125,9 @@ describe("empty & error states (Phase 10)", function()
     end)
 
     it("the recipe delete guard reports the referencing drink count", function()
-      local _, method = MethodService.get_by_slug("espresso")
       local ok, base = RecipeService.create({
         title = "Base",
-        method_id = method.id,
+        method_slug = "espresso",
         dose_g = 18,
         output_weight_g = 36,
       }, {}, {}, {})

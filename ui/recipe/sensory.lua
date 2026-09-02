@@ -45,8 +45,9 @@ function TagPicker:init()
 end
 
 function TagPicker:_has(id)
-  for _idx, tid in ipairs(self.selected) do -- luacheck: ignore _idx
-    if tid == id then
+  -- ids may arrive as SQLite int64 cdata or Lua numbers; compare numerically.
+  for _, tid in ipairs(self.selected) do
+    if tonumber(tid) == tonumber(id) then
       return true
     end
   end
@@ -58,10 +59,10 @@ function TagPicker:_items()
   local ok, tags = ConfigService.flavor_tags.list {}
   tags = ok and tags or {}
   local items = { { text = "+ " .. _("Add Tag"), _add = true } }
-  for _idx, tag in ipairs(tags) do -- luacheck: ignore _idx
+  for _, tag in ipairs(tags) do
     items[#items + 1] = {
       text = (self:_has(tag.id) and "\u{2713} " or "   ") .. tag.name,
-      _id = tag.id,
+      _id = tonumber(tag.id),
     }
   end
   return items
@@ -92,7 +93,7 @@ function TagPicker:onMenuChoice(item)
           })
           return
         end
-        self.selected[#self.selected + 1] = res.id
+        self.selected[#self.selected + 1] = tonumber(res.id)
         self:_refresh()
       end,
     }
@@ -101,7 +102,7 @@ function TagPicker:onMenuChoice(item)
   if item._id then
     if self:_has(item._id) then
       for i, tid in ipairs(self.selected) do
-        if tid == item._id then
+        if tonumber(tid) == item._id then
           table.remove(self.selected, i)
           break
         end

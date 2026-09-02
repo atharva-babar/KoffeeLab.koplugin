@@ -2,17 +2,15 @@ local helper = require("koffeelab.spec_helper")
 local Recipe = require("db/repo/recipe")
 local Drink = require("db/repo/drink")
 local Config = require("db/repo/config")
-local Method = require("db/repo/method")
 
 describe("db/repo/drink", function()
   local base
 
   before_each(function()
     helper.recipe_ready()
-    local espresso = assert(Method.get_by_slug("espresso"))
     base = assert(Recipe.create {
       title = "Dark Crema",
-      method_id = espresso.id,
+      method_slug = "espresso",
       dose_g = 18,
       output_weight_g = 36,
     })

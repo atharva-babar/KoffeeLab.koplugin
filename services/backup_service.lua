@@ -1,13 +1,9 @@
 -- services/backup_service.lua
--- Backup & restore (§1.20). Two mechanisms:
---
---   * File  — copy koffeelab.sqlite3 to a USB-visible folder; restore validates
---     `user_version` and swaps the file in (db/backup.lua does the sqlite bits).
---   * JSON  — a versioned, portable envelope. Recipe / drink sections embed every
---     configuration row they reference (bean, grinder, method, ingredient, tag),
---     because integer ids are not stable across devices. Import matches embedded
---     config by natural key, remaps foreign keys and inserts, all in one
---     transaction (roll back entirely on any error).
+-- Backup & restore. File mode copies koffeelab.sqlite3 to a USB-visible folder;
+-- JSON mode writes a versioned, portable envelope whose recipe/drink sections
+-- embed the config rows they reference (integer ids are not portable). Import
+-- matches config by natural key, remaps foreign keys and inserts, in one
+-- transaction.
 
 local rapidjson = require("rapidjson")
 local util = require("util")
@@ -16,16 +12,16 @@ local DataStorage = require("datastorage")
 local Connection = require("db/connection")
 local DbBackup = require("db/backup")
 local ConfigRepo = require("db/repo/config")
-local MethodRepo = require("db/repo/method")
 local RecipeRepo = require("db/repo/recipe")
 local SessionRepo = require("db/repo/session")
 local DrinkRepo = require("db/repo/drink")
+local Methods = require("methods/init")
 local Support = require("services/support")
 
 local BackupService = {}
 
 BackupService.FORMAT = "koffeelab-backup"
-BackupService.FORMAT_VERSION = 1
+BackupService.FORMAT_VERSION = 2
 
 local ALL_SECTIONS = { "configuration", "recipes", "drinks" }
 
@@ -34,7 +30,7 @@ local function timestamp()
 end
 
 -- lua-ljsqlite3 hands back INTEGER columns as LuaJIT int64 cdata, which rapidjson
--- cannot encode. Walk the envelope and coerce every cdata number to a Lua number.
+-- cannot encode. Coerce every cdata number to a Lua number.
 local function sanitize(value)
   local t = type(value)
   if t == "cdata" then
@@ -57,7 +53,6 @@ local function to_set(list)
   return set
 end
 
---- USB-reachable backup folder (§1.20 — never the plugin's private settings dir).
 function BackupService.default_backup_dir()
   for _, root in ipairs { "/mnt/us", "/mnt/onboard", "/mnt/sdcard" } do
     if util.directoryExists(root) then
@@ -67,9 +62,7 @@ function BackupService.default_backup_dir()
   return DataStorage:getDataDir() .. "/koffeelab/backups/"
 end
 
--- ---------------------------------------------------------------------------
--- File backup / restore
--- ---------------------------------------------------------------------------
+-- File backup / restore -----------------------------------------------------
 
 function BackupService.backup_file(dest_dir)
   dest_dir = dest_dir or BackupService.default_backup_dir()
@@ -108,9 +101,7 @@ function BackupService.restore_file(path)
   return Support.ok { safety_copy = result }
 end
 
--- ---------------------------------------------------------------------------
--- JSON export
--- ---------------------------------------------------------------------------
+-- JSON export -------------------------------------------------------------
 
 local function bean_ref(id)
   local b = id and ConfigRepo.beans.get(id)
@@ -134,77 +125,59 @@ local function grinder_ref(id)
   }
 end
 
-local STEP_KEYS = {
-  "step_type",
-  "start_time_sec",
-  "duration_sec",
-  "target_water_g",
-  "target_total_water_g",
-  "temperature_c",
-  "value",
-  "unit",
-  "instruction",
-  "note",
+local RECIPE_COLUMN_KEYS = {
+  "grind_value",
+  "dose_g",
+  "water_g",
+  "water_temp_c",
+  "brew_time_sec",
+  "output_weight_g",
+  "output_note",
+  "is_favorite",
+  "acidity",
+  "sweetness",
+  "strength",
+  "body",
+  "brightness",
+  "overall_rating",
+  "notes",
 }
 
 local function export_recipe(id)
   local r = RecipeRepo.get(id)
-  local method = MethodRepo.get(r.method_id)
-  local steps = {}
-  for _, s in ipairs(r.steps) do
-    local step = {}
-    for _, k in ipairs(STEP_KEYS) do
-      step[k] = s[k]
-    end
-    steps[#steps + 1] = step
-  end
-  local parameters = {}
-  for _, p in ipairs(r.parameters) do
-    parameters[#parameters + 1] = { key = p.key, value = p.value }
-  end
   local flavor_tags = {}
   for _, t in ipairs(r.flavor_tags) do
     flavor_tags[#flavor_tags + 1] = t.name
   end
   local sessions = {}
-  for _, sess in ipairs(SessionRepo.list_for_recipe(id)) do
+  for _, s in ipairs(SessionRepo.list_for_recipe(id)) do
     sessions[#sessions + 1] = {
-      brewed_at = sess.brewed_at,
-      session_rating = sess.session_rating,
-      measured_brew_time_sec = sess.measured_brew_time_sec,
-      comment = sess.comment,
+      brewed_at = s.brewed_at,
+      session_rating = s.session_rating,
+      measured_brew_time_sec = s.measured_brew_time_sec,
+      comment = s.comment,
     }
   end
-  return {
+  local out = {
     title = r.title,
-    method = method and method.slug or nil,
+    method = r.method_slug,
     bean = bean_ref(r.bean_id),
     grinder = grinder_ref(r.grinder_id),
-    grind_value = r.grind_value,
-    dose_g = r.dose_g,
-    water_g = r.water_g,
-    water_temp_c = r.water_temp_c,
-    brew_time_sec = r.brew_time_sec,
-    output_weight_g = r.output_weight_g,
-    acidity = r.acidity,
-    sweetness = r.sweetness,
-    strength = r.strength,
-    body = r.body,
-    brightness = r.brightness,
-    overall_rating = r.overall_rating,
-    notes = r.notes,
     is_active = r.is_active,
-    steps = steps,
-    parameters = parameters,
+    spec = r.spec,
+    steps = r.steps,
     flavor_tags = flavor_tags,
     sessions = sessions,
   }
+  for _, k in ipairs(RECIPE_COLUMN_KEYS) do
+    out[k] = r[k]
+  end
+  return out
 end
 
 local function export_drink(id)
   local d = DrinkRepo.get(id)
   local base = RecipeRepo.get(d.base_recipe_id)
-  local base_method = base and MethodRepo.get(base.method_id) or nil
   local ingredients = {}
   for _, ing in ipairs(d.ingredients) do
     ingredients[#ingredients + 1] =
@@ -217,8 +190,7 @@ local function export_drink(id)
   return {
     title = d.title,
     temperature_mode = d.temperature_mode,
-    base_recipe = base and { title = base.title, method = base_method and base_method.slug or nil }
-      or nil,
+    base_recipe = base and { title = base.title, method = base.method_slug } or nil,
     base_amount = d.base_amount,
     base_unit = d.base_unit,
     rating = d.rating,
@@ -227,46 +199,6 @@ local function export_drink(id)
     ingredients = ingredients,
     steps = steps,
   }
-end
-
-local function export_methods()
-  local out = {}
-  for _, m in ipairs(MethodRepo.list { include_inactive = true }) do
-    local params = {}
-    for _, p in ipairs(m.parameters) do
-      params[#params + 1] = {
-        key = p.key,
-        label = p.label,
-        data_type = p.data_type,
-        unit = p.unit,
-        required = p.required,
-        default_value = p.default_value,
-        min_value = p.min_value,
-        max_value = p.max_value,
-      }
-    end
-    local step_types = {}
-    for _, st in ipairs(m.step_types) do
-      step_types[#step_types + 1] = st.step_type
-    end
-    local equipment = {}
-    for _, e in ipairs(m.equipment) do
-      equipment[#equipment + 1] = e.name
-    end
-    out[#out + 1] = {
-      slug = m.slug,
-      name = m.name,
-      icon = m.icon,
-      description = m.description,
-      is_system = m.is_system,
-      is_active = m.is_active,
-      sort_order = m.sort_order,
-      parameters = params,
-      step_types = step_types,
-      equipment = equipment,
-    }
-  end
-  return out
 end
 
 function BackupService.build_envelope(sections)
@@ -286,14 +218,7 @@ function BackupService.build_envelope(sections)
       grinders = ConfigRepo.grinders.list { include_inactive = true },
       ingredients = ConfigRepo.ingredients.list { include_inactive = true },
       flavor_tags = ConfigRepo.flavor_tags.list { include_inactive = true },
-      methods = export_methods(),
     }
-  end
-
-  -- Recipe / drink sections carry the methods they reference so a recipe-only
-  -- restore onto a fresh device still resolves its brew method.
-  if (sections.recipes or sections.drinks) and not sections.configuration then
-    env.configuration = { methods = export_methods() }
   end
 
   if sections.recipes then
@@ -336,9 +261,7 @@ function BackupService.export_json(dest_dir, opts)
   return Support.ok(dest)
 end
 
--- ---------------------------------------------------------------------------
--- JSON import
--- ---------------------------------------------------------------------------
+-- JSON import -------------------------------------------------------------
 
 local function load_envelope(path)
   if not util.pathExists(path) then
@@ -357,11 +280,11 @@ local function load_envelope(path)
   if data.format ~= BackupService.FORMAT then
     return nil, "not a KoffeeLab backup file"
   end
-  if tonumber(data.version) ~= BackupService.FORMAT_VERSION then
-    return nil, "unsupported backup format version"
-  end
   if tonumber(data.schema_version or 0) > DbBackup.CURRENT_SCHEMA_VERSION then
     return nil, "that backup is from a newer version of KoffeeLab"
+  end
+  if tonumber(data.version) ~= BackupService.FORMAT_VERSION then
+    return nil, "unsupported backup format version"
   end
   return data
 end
@@ -370,7 +293,6 @@ local function count(list)
   return type(list) == "table" and #list or 0
 end
 
---- Validate the file and report what an import would touch, without changing anything.
 function BackupService.preview_json(path)
   local data, err = load_envelope(path)
   if not data then
@@ -382,44 +304,27 @@ function BackupService.preview_json(path)
     grinders = count(config.grinders),
     ingredients = count(config.ingredients),
     flavor_tags = count(config.flavor_tags),
-    methods = count(config.methods),
     recipes = count(data.recipes),
     drinks = count(data.drinks),
   }
 end
 
--- Natural-key resolvers, each memoised for one import run. On a miss they create the
--- row and return its new id; a repo failure raises (rolls the whole import back).
-local function make_resolvers(data)
-  local caches = { beans = {}, grinders = {}, ingredients = {}, flavor_tags = {}, methods = {} }
-  local created = { beans = 0, grinders = 0, ingredients = 0, flavor_tags = 0, methods = 0 }
+local function make_resolvers()
+  local caches = { beans = {}, grinders = {}, ingredients = {}, flavor_tags = {} }
+  local created = { beans = 0, grinders = 0, ingredients = 0, flavor_tags = 0 }
 
-  local existing_beans = ConfigRepo.beans.list { include_inactive = true }
-  local existing_grinders = ConfigRepo.grinders.list { include_inactive = true }
-  local existing_ingredients = ConfigRepo.ingredients.list { include_inactive = true }
-  local existing_tags = ConfigRepo.flavor_tags.list { include_inactive = true }
-
-  local bean_index = {}
-  for _, b in ipairs(existing_beans) do
+  local bean_index, grinder_index, ingredient_index, tag_index = {}, {}, {}, {}
+  for _, b in ipairs(ConfigRepo.beans.list { include_inactive = true }) do
     bean_index[(b.roaster_name or "") .. "\0" .. b.name] = b.id
   end
-  local grinder_index = {}
-  for _, g in ipairs(existing_grinders) do
+  for _, g in ipairs(ConfigRepo.grinders.list { include_inactive = true }) do
     grinder_index[g.name] = g.id
   end
-  local ingredient_index = {}
-  for _, i in ipairs(existing_ingredients) do
+  for _, i in ipairs(ConfigRepo.ingredients.list { include_inactive = true }) do
     ingredient_index[i.name] = i.id
   end
-  local tag_index = {}
-  for _, t in ipairs(existing_tags) do
+  for _, t in ipairs(ConfigRepo.flavor_tags.list { include_inactive = true }) do
     tag_index[t.name] = t.id
-  end
-
-  -- methods embedded in the envelope, keyed by slug (for creating a missing one)
-  local embedded_methods = {}
-  for _, m in ipairs((data.configuration or {}).methods or {}) do
-    embedded_methods[m.slug] = m
   end
 
   local R = {}
@@ -434,12 +339,11 @@ local function make_resolvers(data)
     end
     local id = bean_index[key]
     if not id then
-      local row = assert(ConfigRepo.beans.create {
+      id = assert(ConfigRepo.beans.create {
         name = ref.name,
         roaster_name = ref.roaster_name or "",
         roast_level = ref.roast_level,
-      })
-      id = row.id
+      }).id
       created.beans = created.beans + 1
     end
     caches.beans[key] = id
@@ -455,14 +359,13 @@ local function make_resolvers(data)
     end
     local id = grinder_index[ref.name]
     if not id then
-      local row = assert(ConfigRepo.grinders.create {
+      id = assert(ConfigRepo.grinders.create {
         name = ref.name,
         unit_name = ref.unit_name or "setting",
         min_value = ref.min_value or 0,
         max_value = ref.max_value or 100,
         step_value = ref.step_value or 1,
-      })
-      id = row.id
+      }).id
       created.grinders = created.grinders + 1
     end
     caches.grinders[ref.name] = id
@@ -478,8 +381,7 @@ local function make_resolvers(data)
     end
     local id = ingredient_index[name]
     if not id then
-      local row = assert(ConfigRepo.ingredients.create { name = name })
-      id = row.id
+      id = assert(ConfigRepo.ingredients.create { name = name }).id
       created.ingredients = created.ingredients + 1
     end
     caches.ingredients[name] = id
@@ -495,75 +397,21 @@ local function make_resolvers(data)
     end
     local id = tag_index[name]
     if not id then
-      local row = assert(ConfigRepo.flavor_tags.create { name = name })
-      id = row.id
+      id = assert(ConfigRepo.flavor_tags.create { name = name }).id
       created.flavor_tags = created.flavor_tags + 1
     end
     caches.flavor_tags[name] = id
     return id
   end
 
-  function R.method(slug)
-    if not slug then
-      return nil
-    end
-    if caches.methods[slug] then
-      return caches.methods[slug]
-    end
-    local existing = MethodRepo.get_by_slug(slug)
-    if existing then
-      caches.methods[slug] = existing.id
-      return existing.id
-    end
-    local embed = embedded_methods[slug]
-    if not embed then
-      error("unknown brew method '" .. slug .. "'", 0)
-    end
-    local row = assert(MethodRepo.create_user_method {
-      slug = embed.slug,
-      name = embed.name,
-      icon = embed.icon,
-      description = embed.description,
-      sort_order = embed.sort_order,
-      parameters = embed.parameters,
-      step_types = embed.step_types,
-      equipment = embed.equipment,
-    })
-    created.methods = created.methods + 1
-    caches.methods[slug] = row.id
-    return row.id
-  end
-
   return R, created
 end
 
-local RECIPE_COLUMN_KEYS = {
-  "grind_value",
-  "dose_g",
-  "water_g",
-  "water_temp_c",
-  "brew_time_sec",
-  "output_weight_g",
-  "acidity",
-  "sweetness",
-  "strength",
-  "body",
-  "brightness",
-  "overall_rating",
-  "notes",
-}
-
 local function apply(data)
-  local resolve, created = make_resolvers(data)
-  local summary = {
-    config_created = created,
-    recipes = 0,
-    sessions = 0,
-    drinks = 0,
-    drinks_skipped = 0,
-  }
+  local resolve, created = make_resolvers()
+  local summary =
+    { config_created = created, recipes = 0, sessions = 0, drinks = 0, drinks_skipped = 0 }
 
-  -- Bare config section (no recipes) — just ensure the rows exist.
   local config = data.configuration or {}
   for _, b in ipairs(config.beans or {}) do
     resolve.bean(b)
@@ -577,46 +425,28 @@ local function apply(data)
   for _, t in ipairs(config.flavor_tags or {}) do
     resolve.tag(t.name)
   end
-  for _, m in ipairs(config.methods or {}) do
-    resolve.method(m.slug)
-  end
 
   local recipe_ids_by_key = {}
   for _, rec in ipairs(data.recipes or {}) do
-    local method_id = resolve.method(rec.method)
-    if not method_id then
-      error("recipe '" .. tostring(rec.title) .. "' has no brew method", 0)
+    if not Methods.get(rec.method) then
+      error("recipe '" .. tostring(rec.title) .. "' uses an unknown brew method", 0)
     end
-    local method = MethodRepo.get(method_id)
-    local param_by_key = {}
-    for _, p in ipairs(method.parameters) do
-      param_by_key[p.key] = p.id
-    end
-
     local recipe = {
       title = rec.title,
-      method_id = method_id,
+      method_slug = rec.method,
       bean_id = resolve.bean(rec.bean),
       grinder_id = resolve.grinder(rec.grinder),
+      spec = rec.spec or {},
+      steps = rec.steps or {},
     }
     for _, k in ipairs(RECIPE_COLUMN_KEYS) do
       recipe[k] = rec[k]
     end
-
-    local param_values = {}
-    for _, pv in ipairs(rec.parameters or {}) do
-      local pid = param_by_key[pv.key]
-      if pid then
-        param_values[#param_values + 1] = { param_id = pid, value = pv.value }
-      end
-    end
-
     local tag_ids = {}
     for _, name in ipairs(rec.flavor_tags or {}) do
       tag_ids[#tag_ids + 1] = resolve.tag(name)
     end
-
-    local row = assert(RecipeRepo.create(recipe, rec.steps or {}, param_values, tag_ids))
+    local row = assert(RecipeRepo.create(recipe, tag_ids))
     summary.recipes = summary.recipes + 1
     recipe_ids_by_key[(rec.title or "") .. "\0" .. rec.method] = row.id
 
@@ -634,11 +464,10 @@ local function apply(data)
 
   for _, dr in ipairs(data.drinks or {}) do
     local base = dr.base_recipe or {}
-    local base_method_id = base.method and resolve.method(base.method) or nil
     local base_id = base.title
       and recipe_ids_by_key[(base.title or "") .. "\0" .. (base.method or "")]
     if not base_id and base.title then
-      local found = RecipeRepo.find_by_title(base.title, base_method_id)
+      local found = RecipeRepo.find_by_title(base.title, base.method)
       base_id = found and found.id or nil
     end
     if not base_id then
@@ -646,11 +475,8 @@ local function apply(data)
     else
       local ingredients = {}
       for _, ing in ipairs(dr.ingredients or {}) do
-        ingredients[#ingredients + 1] = {
-          ingredient_id = resolve.ingredient(ing.name),
-          amount = ing.amount,
-          unit = ing.unit,
-        }
+        ingredients[#ingredients + 1] =
+          { ingredient_id = resolve.ingredient(ing.name), amount = ing.amount, unit = ing.unit }
       end
       assert(DrinkRepo.create({
         title = dr.title,
@@ -673,7 +499,6 @@ function BackupService.import_json(path)
   if not data then
     return Support.err(err)
   end
-
   local summary
   local ok, terr = Connection.with_transaction(function()
     summary = apply(data)

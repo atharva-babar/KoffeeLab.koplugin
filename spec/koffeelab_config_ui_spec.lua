@@ -4,7 +4,7 @@ local Nav = require("ui/nav")
 local Screen = require("device").screen
 
 local ConfigService = require("services/config_service")
-local MethodService = require("services/method_service")
+local TextInput = require("ui/widgets/text_input")
 
 describe("ui/config (Configurator)", function()
   before_each(function()
@@ -17,12 +17,15 @@ describe("ui/config (Configurator)", function()
     helper.teardown()
   end)
 
-  it("Configurator lists the six categories and paints", function()
+  it("Configurator lists its categories and paints", function()
     local Configurator = require("ui/configurator")
     local screen = Nav:push(Configurator:new {})
-    assert.are.equal(6, #screen.item_table)
+    assert.are.equal(5, #screen.item_table)
     assert.are.equal("Beans", screen.item_table[1].text)
-    assert.are.equal("Backup & Restore", screen.item_table[6].text)
+    assert.are.equal("Backup & Restore", screen.item_table[5].text)
+    for _, item in ipairs(screen.item_table) do
+      assert.are_not.equal("Brew Methods", item.text)
+    end
     screen:paintTo(Screen.bb, 0, 0)
   end)
 
@@ -168,88 +171,49 @@ describe("ui/config (Configurator)", function()
     end)
   end)
 
-  describe("Brew Methods", function()
-    local Methods = require("ui/config/methods")
-    local MethodForm = require("ui/config/method_form")
-    local MethodDetail = require("ui/config/method_detail")
+  describe("Ingredients / Flavor Tags (single-field, inline dialog)", function()
+    local Ingredients = require("ui/config/ingredients")
+    local FlavorTags = require("ui/config/flavor_tags")
 
-    it("lists the five system methods and paints a detail view", function()
-      local list = Nav:push(Methods:new {})
-      -- 1 add row + 5 system methods
-      assert.are.equal(6, #list.item_table)
-
-      local pour_over
-      for _, item in ipairs(list.item_table) do
-        if item._entity and item._entity.slug == "pour_over" then
-          pour_over = item._entity
-        end
+    local function stub_text(value)
+      local orig = TextInput.show
+      TextInput.show = function(opts)
+        opts.on_ok(value)
       end
-      assert.is_not_nil(pour_over)
+      finally(function()
+        TextInput.show = orig
+      end)
+    end
 
-      local detail = Nav:push(MethodDetail:new { method = pour_over })
-      detail:paintTo(Screen.bb, 0, 0)
-      -- system methods expose no Edit action
-      local has_edit = false
-      for _, item in ipairs(detail.item_table) do
-        if item._action == "edit" then
-          has_edit = true
-        end
-      end
-      assert.is_false(has_edit)
+    it("adds an ingredient straight from a text dialog, no form screen", function()
+      local list = Nav:push(Ingredients:new {})
+      local depth = Nav:depth()
+      stub_text("Oat milk")
+      list:on_add()
+      assert.are.equal(depth, Nav:depth()) -- no EntityForm pushed
+      local _, rows = ConfigService.ingredients.list {}
+      assert.are.equal(1, #rows)
+      assert.are.equal("Oat milk", rows[1].name)
+      assert.are.equal("Oat milk", list.item_table[2].text)
     end)
 
-    it("builds a user method with params + steps, then deactivates it", function()
-      local list = Nav:push(Methods:new {})
-      local saved = false
-      local form = MethodForm:new {
-        on_saved = function()
-          saved = true
-          list:reload()
-        end,
-      }
-      Nav:push(form)
-      form.values.name = "Moka Pot"
-      form.values.icon = "MP"
-      form.values.parameters = {
-        { key = "pressure", label = "Stove level", data_type = "int", required = 0 },
-        { key = "prep", label = "Prep note", data_type = "text", required = 0 },
-      }
-      form.values.step_types = { "setup", "extract", "finish" }
-      form:_save()
-      assert.is_true(saved)
+    it("renames a flavor tag inline", function()
+      assert(ConfigService.flavor_tags.create { name = "Choco" })
+      local list = Nav:push(FlavorTags:new {})
+      local entity = list.item_table[2]._entity
+      stub_text("Chocolate")
+      list:on_edit(entity)
+      local _, rows = ConfigService.flavor_tags.list {}
+      assert.are.equal("Chocolate", rows[1].name)
+    end)
 
-      local ok, methods = MethodService.list { include_inactive = true }
-      assert.is_true(ok)
-      local moka
-      for _, m in ipairs(methods) do
-        if m.name == "Moka Pot" then
-          moka = m
-        end
-      end
-      assert.is_not_nil(moka)
-      assert.are.equal("moka_pot", moka.slug)
-      assert.are.equal(2, #moka.parameters)
-      assert.are.equal(3, #moka.step_types)
-
-      local detail = Nav:push(MethodDetail:new { method = moka })
-      local toggle, has_edit
-      for _, item in ipairs(detail.item_table) do
-        if item._action == "toggle" then
-          toggle = item
-        elseif item._action == "edit" then
-          has_edit = true
-        end
-      end
-      assert.is_not_nil(toggle)
-      assert.is_true(has_edit) -- user methods expose Edit
-      detail:onMenuChoice(toggle)
-      local UIManager = require("ui/uimanager")
-      local box = UIManager._window_stack[#UIManager._window_stack].widget
-      box.ok_callback()
-      UIManager:close(box)
-
-      local _, fresh = MethodService.get(moka.id)
-      assert.are.equal(0, tonumber(fresh.is_active))
+    it("surfaces a duplicate-name error without crashing", function()
+      assert(ConfigService.ingredients.create { name = "Milk" })
+      local list = Nav:push(Ingredients:new {})
+      stub_text("Milk")
+      list:on_add()
+      local _, rows = ConfigService.ingredients.list {}
+      assert.are.equal(1, #rows)
     end)
   end)
 end)

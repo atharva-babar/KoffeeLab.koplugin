@@ -21,29 +21,22 @@ describe("db/migrations", function()
     helper.teardown()
   end)
 
-  it("brings a fresh DB to the current schema version", function()
+  it("brings a fresh DB to schema version 2", function()
     local conn = helper.fresh_connection()
     assert.are.equal(Migrations.CURRENT_SCHEMA_VERSION, Migrations.run(conn))
-    assert.are.equal(1, tonumber(conn:rowexec("PRAGMA user_version")))
+    assert.are.equal(2, tonumber(conn:rowexec("PRAGMA user_version")))
   end)
 
-  it("creates every table, index and view from the schema", function()
+  it("creates the v2 tables and leaves no legacy method tables", function()
     local conn = helper.fresh_connection()
     Migrations.run(conn)
-
     local tables = names_of(conn, "table")
     for _, name in ipairs {
       "beans",
       "grinders",
       "ingredients",
       "flavor_tags",
-      "brew_methods",
-      "brew_method_parameters",
-      "brew_method_step_types",
-      "brew_method_equipment",
       "brew_recipes",
-      "brew_recipe_parameters",
-      "brew_recipe_steps",
       "recipe_flavor_tags",
       "brew_sessions",
       "custom_drinks",
@@ -53,39 +46,45 @@ describe("db/migrations", function()
     } do
       assert.is_true(tables[name] == true, "missing table: " .. name)
     end
-
-    local indexes = names_of(conn, "index")
-    for _, name in ipairs {
-      "idx_ingredients_name",
-      "idx_flavor_tags_name",
-      "idx_method_equipment_method",
-      "idx_recipes_method",
-      "idx_recipes_bean",
-      "idx_recipes_active",
-      "idx_recipes_title",
-      "idx_recipe_steps_recipe",
-      "idx_recipe_flavor_tags_tag",
-      "idx_sessions_recipe",
-      "idx_sessions_brewed",
-      "idx_drinks_base",
-      "idx_drinks_mode",
-      "idx_drinks_active",
-      "idx_drink_ingredients_drink",
-      "idx_drink_ingredients_ing",
-      "idx_drink_steps_drink",
+    for _, gone in ipairs {
+      "brew_methods",
+      "brew_method_parameters",
+      "brew_method_step_types",
+      "brew_method_equipment",
+      "brew_recipe_parameters",
+      "brew_recipe_steps",
     } do
-      assert.is_true(indexes[name] == true, "missing index: " .. name)
+      assert.is_nil(tables[gone], "table should be gone: " .. gone)
     end
-
     assert.is_true(names_of(conn, "view").recipe_stats == true)
+  end)
+
+  it("gives brew_recipes the new method_slug and JSON columns", function()
+    local conn = helper.fresh_connection()
+    Migrations.run(conn)
+    local cols = {}
+    local stmt = conn:prepare("PRAGMA table_info(brew_recipes)")
+    while true do
+      local row = stmt:step()
+      if not row then
+        break
+      end
+      cols[row[2]] = true
+    end
+    stmt:close()
+    for _, name in ipairs { "method_slug", "spec_json", "steps_json", "output_note", "is_favorite" } do
+      assert.is_true(cols[name] == true, "missing column: " .. name)
+    end
+    assert.is_nil(cols.method_id)
   end)
 
   it("is a no-op on the second run", function()
     local conn = helper.fresh_connection()
     Migrations.run(conn)
-    local method_count = tonumber(conn:rowexec("SELECT COUNT(*) FROM brew_methods"))
+    local Config = require("db/repo/config")
+    assert(Config.beans.create { name = "Keep me", roaster_name = "R" })
     assert.are.equal(Migrations.CURRENT_SCHEMA_VERSION, Migrations.run(conn))
-    assert.are.equal(method_count, tonumber(conn:rowexec("SELECT COUNT(*) FROM brew_methods")))
+    assert.are.equal(1, tonumber(conn:rowexec("SELECT COUNT(*) FROM beans")))
   end)
 
   it("rolls the whole migration back when a statement fails", function()

@@ -3,12 +3,10 @@ local Connection = require("db/connection")
 local Migrations = require("db/migrations")
 local BackupService = require("services/backup_service")
 local ConfigRepo = require("db/repo/config")
-local MethodRepo = require("db/repo/method")
 local RecipeRepo = require("db/repo/recipe")
 local SessionRepo = require("db/repo/session")
 local DrinkRepo = require("db/repo/drink")
 
--- A scratch directory unique per test, cleaned up in after_each.
 local function scratch_dir()
   local base = os.tmpname()
   os.remove(base)
@@ -41,12 +39,10 @@ local function seed_dataset()
   })
   local tag = assert(ConfigRepo.flavor_tags.create { name = "Floral" })
   local milk = assert(ConfigRepo.ingredients.create { name = "Milk" })
-  local pour_over = assert(MethodRepo.get_by_slug("pour_over"))
-  local espresso = assert(MethodRepo.get_by_slug("espresso"))
 
   local recipe = assert(RecipeRepo.create({
     title = "Ethiopia Guji V60",
-    method_id = pour_over.id,
+    method_slug = "pour_over",
     bean_id = bean.id,
     grinder_id = grinder.id,
     grind_value = 18,
@@ -54,17 +50,17 @@ local function seed_dataset()
     water_g = 250,
     water_temp_c = 93.5,
     acidity = 4,
-  }, {
-    { step_type = "bloom", start_time_sec = 0, duration_sec = 30, target_water_g = 50 },
-    { step_type = "pour", start_time_sec = 30, target_total_water_g = 250 },
-  }, {
-    { param_id = pour_over.parameters[1].id, value = "Hario V60 02" },
+    spec = { dripper = "V60" },
+    steps = {
+      { step_type = "bloom", start_time = 0, water = 50 },
+      { step_type = "pour", start_time = 30, water = 200 },
+    },
   }, { tag.id }))
   assert(SessionRepo.create { recipe_id = recipe.id, session_rating = 5, comment = "great" })
 
   local base = assert(RecipeRepo.create {
     title = "Dark Crema",
-    method_id = espresso.id,
+    method_slug = "espresso",
     dose_g = 18,
     output_weight_g = 36,
   })
@@ -96,7 +92,6 @@ describe("services/backup_service — JSON", function()
     assert.is_true(ok)
     assert.is_truthy(dest:match("%.json$"))
 
-    -- Fresh DB, different id space: create a decoy bean so ids won't line up.
     helper.teardown()
     helper.migrated_connection()
     assert(ConfigRepo.beans.create { name = "Decoy", roaster_name = "X" })
@@ -113,9 +108,8 @@ describe("services/backup_service — JSON", function()
     assert.are.equal("Ethiopia Guji V60", full.title)
     assert.are.equal(2, #full.steps)
     assert.are.equal(1, #full.flavor_tags)
-    assert.are.equal("Hario V60 02", full.parameters[1].value)
+    assert.are.equal("V60", full.spec.dripper)
 
-    -- FK remapped to a bean that actually exists in the new DB.
     local bean = ConfigRepo.beans.get(full.bean_id)
     assert.are.equal("Ethiopia Guji", bean.name)
 
@@ -133,7 +127,6 @@ describe("services/backup_service — JSON", function()
     end)
     local _, dest = BackupService.export_json(dir)
 
-    -- Import back onto the SAME DB: the bean/grinder/tag already exist by name.
     local iok = BackupService.import_json(dest)
     assert.is_true(iok)
     assert.are.equal(1, #ConfigRepo.beans.list())
@@ -158,7 +151,7 @@ describe("services/backup_service — JSON", function()
     assert.are.equal(before, #RecipeRepo.all_ids())
   end)
 
-  it("rejects a newer format/schema version", function()
+  it("rejects a newer schema version", function()
     local dir = scratch_dir()
     finally(function()
       rmrf(dir)
@@ -166,7 +159,7 @@ describe("services/backup_service — JSON", function()
     local path = dir .. "future.json"
     local fh = io.open(path, "wb")
     fh:write(
-      '{"format":"koffeelab-backup","version":1,"schema_version":999,"recipes":[],"drinks":[]}'
+      '{"format":"koffeelab-backup","version":2,"schema_version":999,"recipes":[],"drinks":[]}'
     )
     fh:close()
 
@@ -185,6 +178,24 @@ describe("services/backup_service — JSON", function()
     assert.is_true(ok)
     assert.are.equal(2, counts.recipes)
     assert.are.equal(1, counts.drinks)
+  end)
+
+  it("rejects a recipe whose method is unknown", function()
+    local dir = scratch_dir()
+    finally(function()
+      rmrf(dir)
+    end)
+    local path = dir .. "bad-method.json"
+    local fh = io.open(path, "wb")
+    fh:write(
+      '{"format":"koffeelab-backup","version":2,"schema_version":'
+        .. Migrations.CURRENT_SCHEMA_VERSION
+        .. ',"configuration":{},"recipes":[{"title":"X","method":"turkish","dose_g":15}],"drinks":[]}'
+    )
+    fh:close()
+    local ok, err = BackupService.import_json(path)
+    assert.is_false(ok)
+    assert.is_truthy(err:match("unknown brew method"))
   end)
 end)
 
@@ -215,7 +226,6 @@ describe("services/backup_service — file", function()
     assert.is_true(ok, tostring(backup_path))
     assert.is_truthy(lfs.attributes(backup_path, "mode"))
 
-    -- Destroy the live data (drinks first — they RESTRICT their base recipe).
     for _, id in ipairs(DrinkRepo.all_ids()) do
       DrinkRepo.delete(id)
     end

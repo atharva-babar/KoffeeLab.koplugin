@@ -1,20 +1,18 @@
 -- db/repo/recipe.lua
--- Brew recipes and their children: steps (§1.12), method-parameter values (§1.9a),
--- flavor tags. Writes span four tables and always run in one transaction
--- (§Conventions 16). `get` returns the fully nested recipe without an is_active
--- filter (§1.21 — a detail view must render even when the bean was since disabled).
--- The referential guard for "used by N drinks" lives in the service layer.
+-- Brew recipes and their flavor tags. Method parameters and the step list are
+-- stored as JSON columns (spec_json / steps_json); create/update take Lua tables
+-- and this module owns the encode/decode. Writes run in one transaction. `get`
+-- never filters on is_active so a detail view renders after its bean is disabled.
 
+local rapidjson = require("rapidjson")
 local Query = require("db/query")
 local Support = require("db/repo/support")
 
 local Recipe = {}
 
--- Fixed columns on brew_recipes a caller may set (§1.9a). Method-specific values go
--- through param_values, not here.
 local RECIPE_FIELDS = {
   "title",
-  "method_id",
+  "method_slug",
   "bean_id",
   "grinder_id",
   "grind_value",
@@ -23,6 +21,9 @@ local RECIPE_FIELDS = {
   "water_temp_c",
   "brew_time_sec",
   "output_weight_g",
+  "spec_json",
+  "steps_json",
+  "output_note",
   "acidity",
   "sweetness",
   "strength",
@@ -30,19 +31,7 @@ local RECIPE_FIELDS = {
   "brightness",
   "overall_rating",
   "notes",
-}
-
-local STEP_FIELDS = {
-  "step_type",
-  "start_time_sec",
-  "duration_sec",
-  "target_water_g",
-  "target_total_water_g",
-  "temperature_c",
-  "value",
-  "unit",
-  "instruction",
-  "note",
+  "is_favorite",
 }
 
 local SORT_CLAUSES = {
@@ -52,28 +41,55 @@ local SORT_CLAUSES = {
   updated = "r.updated_at DESC, r.id DESC",
 }
 
-local STEP_COLS = { "recipe_id", "step_order" }
-for _, key in ipairs(STEP_FIELDS) do
-  STEP_COLS[#STEP_COLS + 1] = key
+local INSERT_COLS = {}
+for _, key in ipairs(RECIPE_FIELDS) do
+  INSERT_COLS[#INSERT_COLS + 1] = key
+end
+INSERT_COLS[#INSERT_COLS + 1] = "created_at"
+INSERT_COLS[#INSERT_COLS + 1] = "updated_at"
+
+local function encode_spec(spec)
+  if type(spec) ~= "table" or next(spec) == nil then
+    return "{}"
+  end
+  return rapidjson.encode(spec, { sort_keys = true })
 end
 
-local function insert_children(conn, recipe_id, steps, param_values, flavor_tag_ids)
-  for order, step in ipairs(steps or {}) do
-    local values = { recipe_id = recipe_id, step_order = order }
-    for _, key in ipairs(STEP_FIELDS) do
-      values[key] = step[key]
-    end
-    Support.insert(conn, "brew_recipe_steps", STEP_COLS, values)
+local function encode_steps(steps)
+  if type(steps) ~= "table" or #steps == 0 then
+    return "[]"
   end
+  return rapidjson.encode(steps)
+end
 
-  for _, pv in ipairs(param_values or {}) do
-    Query.exec(
-      conn,
-      "INSERT INTO brew_recipe_parameters (recipe_id, param_id, value) VALUES (?, ?, ?)",
-      Support.args(recipe_id, pv.param_id, pv.value)
-    )
+local function decoded(str, fallback)
+  if type(str) ~= "string" or str == "" then
+    return fallback
   end
+  local ok, value = pcall(rapidjson.decode, str)
+  if not ok or type(value) ~= "table" then
+    return fallback
+  end
+  return value
+end
 
+-- Fold caller-facing `spec` / `steps` tables into the JSON columns.
+local function with_json(recipe)
+  local out = {}
+  for k, v in pairs(recipe) do
+    out[k] = v
+  end
+  if recipe.spec ~= nil then
+    out.spec_json = encode_spec(recipe.spec)
+  end
+  if recipe.steps ~= nil then
+    out.steps_json = encode_steps(recipe.steps)
+  end
+  out.spec, out.steps = nil, nil
+  return out
+end
+
+local function insert_tags(conn, recipe_id, flavor_tag_ids)
   for _, tag_id in ipairs(flavor_tag_ids or {}) do
     Query.exec(
       conn,
@@ -83,32 +99,20 @@ local function insert_children(conn, recipe_id, steps, param_values, flavor_tag_
   end
 end
 
-local RECIPE_INSERT_COLS = {}
-for _, key in ipairs(RECIPE_FIELDS) do
-  RECIPE_INSERT_COLS[#RECIPE_INSERT_COLS + 1] = key
-end
-RECIPE_INSERT_COLS[#RECIPE_INSERT_COLS + 1] = "created_at"
-RECIPE_INSERT_COLS[#RECIPE_INSERT_COLS + 1] = "updated_at"
-
---- Insert a recipe with its steps, parameter values and flavor tags.
-function Recipe.create(recipe, steps, param_values, flavor_tag_ids)
+function Recipe.create(recipe, flavor_tag_ids)
   return Support.transaction(function(conn)
     local now = Support.now()
-    local values = { created_at = now, updated_at = now }
-    for _, key in ipairs(RECIPE_FIELDS) do
-      values[key] = recipe[key]
-    end
-    local res = Support.insert(conn, "brew_recipes", RECIPE_INSERT_COLS, values)
-    insert_children(conn, res.last_insert_rowid, steps, param_values, flavor_tag_ids)
+    local values = with_json(recipe)
+    values.created_at, values.updated_at = now, now
+    local res = Support.insert(conn, "brew_recipes", INSERT_COLS, values)
+    insert_tags(conn, res.last_insert_rowid, flavor_tag_ids)
     return Recipe.get(res.last_insert_rowid)
   end)
 end
 
---- Replace the recipe's columns and its whole set of steps / params / tags. Steps
---- are delete-and-reinsert, so `UNIQUE(recipe_id, step_order)` never collides (§1.12).
-function Recipe.update(id, recipe, steps, param_values, flavor_tag_ids)
+function Recipe.update(id, recipe, flavor_tag_ids)
   return Support.transaction(function(conn)
-    local frag, params = Support.assignments(recipe or {}, RECIPE_FIELDS)
+    local frag, params = Support.assignments(with_json(recipe or {}), RECIPE_FIELDS)
     if frag ~= "" then
       params[#params + 1] = Support.now()
       params[#params + 1] = id
@@ -120,42 +124,34 @@ function Recipe.update(id, recipe, steps, param_values, flavor_tag_ids)
     else
       Query.exec(conn, "UPDATE brew_recipes SET updated_at = ? WHERE id = ?", { Support.now(), id })
     end
-
-    if steps then
-      Query.exec(conn, "DELETE FROM brew_recipe_steps WHERE recipe_id = ?", { id })
-    end
-    if param_values then
-      Query.exec(conn, "DELETE FROM brew_recipe_parameters WHERE recipe_id = ?", { id })
-    end
     if flavor_tag_ids then
       Query.exec(conn, "DELETE FROM recipe_flavor_tags WHERE recipe_id = ?", { id })
+      insert_tags(conn, id, flavor_tag_ids)
     end
-    insert_children(conn, id, steps, param_values, flavor_tag_ids)
     return Recipe.get(id)
   end)
 end
 
---- Fully nested recipe by id (no is_active filter — §1.21). nil when absent.
+function Recipe.set_favorite(id, favorite)
+  return Support.guard(function()
+    local res = Query.exec(
+      Support.conn(),
+      "UPDATE brew_recipes SET is_favorite = ?, updated_at = ? WHERE id = ?",
+      { favorite and 1 or 0, Support.now(), id }
+    )
+    return res.changes > 0
+  end)
+end
+
+--- Fully nested recipe by id (no is_active filter). nil when absent.
 function Recipe.get(id)
   local conn = Support.conn()
   local recipe = Query.one(conn, "SELECT * FROM brew_recipes WHERE id = ?", { id })
   if not recipe then
     return nil
   end
-  recipe.steps = Query.all(
-    conn,
-    "SELECT * FROM brew_recipe_steps WHERE recipe_id = ? ORDER BY step_order",
-    { id }
-  )
-  recipe.parameters = Query.all(
-    conn,
-    [[SELECT rp.param_id, rp.value, mp.key, mp.label, mp.data_type, mp.unit
-        FROM brew_recipe_parameters rp
-        JOIN brew_method_parameters mp ON mp.id = rp.param_id
-       WHERE rp.recipe_id = ?
-       ORDER BY mp.sort_order, mp.id]],
-    { id }
-  )
+  recipe.spec = decoded(recipe.spec_json, {})
+  recipe.steps = decoded(recipe.steps_json, {})
   recipe.flavor_tags = Query.all(
     conn,
     [[SELECT ft.id, ft.name
@@ -181,13 +177,12 @@ function Recipe.all_ids()
 end
 
 --- First recipe whose title matches exactly (optionally scoped to a method), or nil.
---- Used by JSON import to resolve a drink's base recipe.
-function Recipe.find_by_title(title, method_id)
-  if method_id then
+function Recipe.find_by_title(title, method_slug)
+  if method_slug then
     return Query.one(
       Support.conn(),
-      "SELECT * FROM brew_recipes WHERE title = ? AND method_id = ? ORDER BY id LIMIT 1",
-      { title, method_id }
+      "SELECT * FROM brew_recipes WHERE title = ? AND method_slug = ? ORDER BY id LIMIT 1",
+      { title, method_slug }
     )
   end
   return Query.one(
@@ -197,7 +192,6 @@ function Recipe.find_by_title(title, method_id)
   )
 end
 
---- Hard delete (children cascade). Caller must have cleared the drink-reference guard.
 function Recipe.delete(id)
   return Support.guard(function()
     local res = Query.exec(Support.conn(), "DELETE FROM brew_recipes WHERE id = ?", { id })
@@ -205,14 +199,17 @@ function Recipe.delete(id)
   end)
 end
 
---- Index rows joined to recipe_stats (§1.21). Active recipes only, LIKE-escaped
---- title search, one of the four documented sorts (default: updated).
+--- Index rows joined to recipe_stats. Active recipes only, LIKE-escaped title
+--- search, one of the four documented sorts (default: updated).
 function Recipe.list_for_index(opts)
   opts = opts or {}
   local where, params = { "r.is_active = 1" }, {}
-  if opts.method_id then
-    where[#where + 1] = "r.method_id = ?"
-    params[#params + 1] = opts.method_id
+  if opts.method_slug then
+    where[#where + 1] = "r.method_slug = ?"
+    params[#params + 1] = opts.method_slug
+  end
+  if opts.favorite then
+    where[#where + 1] = "r.is_favorite = 1"
   end
   if opts.search and opts.search ~= "" then
     where[#where + 1] = "r.title LIKE ? ESCAPE '\\'"
@@ -220,15 +217,17 @@ function Recipe.list_for_index(opts)
   end
   local order = SORT_CLAUSES[opts.sort] or SORT_CLAUSES.updated
   local sql = string.format(
-    [[SELECT r.*, st.brew_count, st.avg_session_rating, st.last_brewed_at, m.name AS method_name, m.slug AS method_slug
+    [[SELECT r.*, st.brew_count, st.avg_session_rating, st.last_brewed_at
         FROM brew_recipes r
         JOIN recipe_stats st ON st.recipe_id = r.id
-        JOIN brew_methods m ON m.id = r.method_id
        WHERE %s
        ORDER BY %s]],
     table.concat(where, " AND "),
     order
   )
+  if opts.limit then
+    sql = sql .. " LIMIT " .. tonumber(opts.limit)
+  end
   return Query.all(Support.conn(), sql, params)
 end
 

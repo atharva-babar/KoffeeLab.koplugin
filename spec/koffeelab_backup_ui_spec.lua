@@ -7,7 +7,6 @@ local Migrations = require("db/migrations")
 local BackupService = require("services/backup_service")
 local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local ConfigRepo = require("db/repo/config")
-local MethodRepo = require("db/repo/method")
 local RecipeRepo = require("db/repo/recipe")
 local DrinkRepo = require("db/repo/drink")
 local SessionRepo = require("db/repo/session")
@@ -55,21 +54,19 @@ local function seed()
     step_value = 1,
   })
   local milk = assert(ConfigRepo.ingredients.create { name = "Milk" })
-  local po = assert(MethodRepo.get_by_slug("pour_over"))
-  local esp = assert(MethodRepo.get_by_slug("espresso"))
   local recipe = assert(RecipeRepo.create({
     title = "Guji V60",
-    method_id = po.id,
+    method_slug = "pour_over",
     bean_id = bean.id,
     grinder_id = grinder.id,
     grind_value = 18,
     dose_g = 15,
     water_g = 250,
-  }, {}, {}, {}))
+  }, {}))
   assert(SessionRepo.create { recipe_id = recipe.id, session_rating = 5 })
   local base = assert(RecipeRepo.create {
     title = "Dark Crema",
-    method_id = esp.id,
+    method_slug = "espresso",
     dose_g = 18,
     output_weight_g = 36,
   })

@@ -1,38 +1,29 @@
 -- ui/recipe/add_flow.lua
--- Orchestrates the Add / Edit Recipe flow (TECH_SOLUTION §2.4, §2.17, §3.6). A
--- single in-memory `draft` is carried across every screen:
---
+-- Orchestrates Add / Edit Recipe. One in-memory `draft` travels every screen:
 --   draft = {
---     recipe = { … the fixed brew_recipes columns … },   -- §1.9a
---     method = <nested method row>,                        -- drives the form
---     steps  = { { step_type = …, … }, … },
---     params = { [param_id] = value, … },                  -- method parameters
---     flavor_tag_ids = { id, … },
---     bean = <bean row or nil>,  grinder = <grinder row or nil>,  -- display only
+--     recipe = { ...shared brew_recipes columns... },
+--     method = <static def from methods/>,
+--     steps  = { { step_type, start_time, water, note }, ... },
+--     spec   = { [param_key] = value },
+--     flavor_tag_ids = { id, ... },
+--     bean, grinder = <rows, display only>,
 --     editing_id = <recipe id> or nil,
 --   }
---
--- Screen 1 is the method picker (ui/recipe/method_select); picking a method
--- replaces it with the method-driven form (ui/recipe/recipe_form). Edit skips
--- screen 1 and prefills the draft from `recipe_service.get`.
 
 local ConfigService = require("services/config_service")
 local InfoMessage = require("ui/widget/infomessage")
 local MethodSelect = require("ui/recipe/method_select")
-local MethodService = require("services/method_service")
+local Methods = require("methods/init")
 local Nav = require("ui/nav")
 local RecipeForm = require("ui/recipe/recipe_form")
 local RecipeService = require("services/recipe_service")
 local UIManager = require("ui/uimanager")
-local _ = require("gettext")
 
 local AddFlow = {}
 
--- Fixed brew_recipes columns the draft carries (§1.9a). Method-specific values
--- travel in `draft.params`, sensory axes are set on `draft.recipe` too.
 AddFlow.RECIPE_KEYS = {
   "title",
-  "method_id",
+  "method_slug",
   "bean_id",
   "grinder_id",
   "grind_value",
@@ -41,6 +32,7 @@ AddFlow.RECIPE_KEYS = {
   "water_temp_c",
   "brew_time_sec",
   "output_weight_g",
+  "output_note",
   "acidity",
   "sweetness",
   "strength",
@@ -48,14 +40,15 @@ AddFlow.RECIPE_KEYS = {
   "brightness",
   "overall_rating",
   "notes",
+  "is_favorite",
 }
 
 local function warn(msg)
   UIManager:show(InfoMessage:new { text = tostring(msg), icon = "notice-warning" })
 end
 
--- SQLite INTEGER columns arrive as int64 cdata; the service validators (and the
--- widgets) work in plain Lua numbers, so normalise on the way into the draft.
+-- SQLite INTEGER columns arrive as int64 cdata; the validators and widgets work
+-- in plain Lua numbers, so normalise everything on the way into the draft.
 local function plain(v)
   if type(v) == "cdata" then
     return tonumber(v)
@@ -63,26 +56,31 @@ local function plain(v)
   return v
 end
 
---- Start the Add Recipe flow. `opts.on_saved(recipe_id)` fires after a successful
---- save (e.g. to refresh an index).
+local function new_draft(method)
+  local spec = {}
+  for _, p in ipairs(method.params or {}) do
+    if p.default ~= nil then
+      spec[p.key] = p.default
+    end
+  end
+  return {
+    recipe = { method_slug = method.slug, notes = "" },
+    method = method,
+    steps = {},
+    spec = spec,
+    flavor_tag_ids = {},
+  }
+end
+
 function AddFlow.start(opts)
   opts = opts or {}
   Nav:push(MethodSelect:new {
     on_pick = function(_, method)
-      local draft = {
-        recipe = { method_id = method.id, notes = "" },
-        method = method,
-        steps = {},
-        params = {},
-        flavor_tag_ids = {},
-      }
-      Nav:replace(RecipeForm:new { draft = draft, on_saved = opts.on_saved })
+      Nav:replace(RecipeForm:new { draft = new_draft(method), on_saved = opts.on_saved })
     end,
   })
 end
 
---- Edit an existing recipe: prefill the draft and push the same form. `opts.on_saved`
---- fires after the update (the caller — usually the detail page — refreshes itself).
 function AddFlow.edit(recipe_id, opts)
   opts = opts or {}
   local ok, recipe = RecipeService.get(recipe_id)
@@ -90,9 +88,9 @@ function AddFlow.edit(recipe_id, opts)
     warn(recipe)
     return
   end
-  local mok, method = MethodService.get(recipe.method_id)
-  if not mok then
-    warn(method)
+  local method = Methods.get(recipe.method_slug)
+  if not method then
+    warn("unknown brew method")
     return
   end
 
@@ -100,25 +98,25 @@ function AddFlow.edit(recipe_id, opts)
     recipe = {},
     method = method,
     steps = {},
-    params = {},
+    spec = {},
     flavor_tag_ids = {},
     editing_id = recipe_id,
   }
-  for _idx, key in ipairs(AddFlow.RECIPE_KEYS) do -- luacheck: ignore _idx
+  for _, key in ipairs(AddFlow.RECIPE_KEYS) do
     draft.recipe[key] = plain(recipe[key])
   end
-  for _idx, step in ipairs(recipe.steps or {}) do -- luacheck: ignore _idx
+  for _, step in ipairs(recipe.steps or {}) do
     local copy = {}
     for k, v in pairs(step) do
       copy[k] = plain(v)
     end
     draft.steps[#draft.steps + 1] = copy
   end
-  for _idx, pv in ipairs(recipe.parameters or {}) do -- luacheck: ignore _idx
-    draft.params[tonumber(pv.param_id)] = pv.value
+  for k, v in pairs(recipe.spec or {}) do
+    draft.spec[k] = plain(v)
   end
-  for _idx, tag in ipairs(recipe.flavor_tags or {}) do -- luacheck: ignore _idx
-    draft.flavor_tag_ids[#draft.flavor_tag_ids + 1] = tag.id
+  for _, tag in ipairs(recipe.flavor_tags or {}) do
+    draft.flavor_tag_ids[#draft.flavor_tag_ids + 1] = plain(tag.id)
   end
   if recipe.bean_id then
     local bok, bean = ConfigService.beans.get(recipe.bean_id)
@@ -132,34 +130,31 @@ function AddFlow.edit(recipe_id, opts)
   Nav:push(RecipeForm:new { draft = draft, on_saved = opts.on_saved })
 end
 
---- Assemble the service payload from a draft (shared by create and update).
 function AddFlow.payload(draft)
   local recipe = {}
-  for _idx, key in ipairs(AddFlow.RECIPE_KEYS) do -- luacheck: ignore _idx
+  for _, key in ipairs(AddFlow.RECIPE_KEYS) do
     recipe[key] = draft.recipe[key]
   end
-  if recipe.notes == nil then
-    recipe.notes = ""
-  end
+  recipe.notes = recipe.notes or ""
+  recipe.output_note = recipe.output_note or ""
 
-  local param_values = {}
-  for _idx, param in ipairs(draft.method.parameters or {}) do -- luacheck: ignore _idx
-    local v = draft.params[tonumber(param.id)]
+  local spec = {}
+  for _, p in ipairs(draft.method.params or {}) do
+    local v = draft.spec[p.key]
     if v ~= nil and v ~= "" then
-      param_values[#param_values + 1] = { param_id = param.id, value = tostring(v) }
+      spec[p.key] = v
     end
   end
 
-  return recipe, draft.steps, param_values, draft.flavor_tag_ids
+  return recipe, draft.steps, spec, draft.flavor_tag_ids
 end
 
---- Persist the draft. Returns `ok, recipe_or_error`.
 function AddFlow.save(draft)
-  local recipe, steps, param_values, tag_ids = AddFlow.payload(draft)
+  local recipe, steps, spec, tag_ids = AddFlow.payload(draft)
   if draft.editing_id then
-    return RecipeService.update(draft.editing_id, recipe, steps, param_values, tag_ids)
+    return RecipeService.update(draft.editing_id, recipe, steps, spec, tag_ids)
   end
-  return RecipeService.create(recipe, steps, param_values, tag_ids)
+  return RecipeService.create(recipe, steps, spec, tag_ids)
 end
 
 return AddFlow

@@ -20,7 +20,7 @@ local function draft_for(slug, ids)
   local _, method = MethodService.get_by_slug(slug)
   return {
     recipe = {
-      method_id = method.id,
+      method_slug = method.slug,
       title = "Test " .. slug,
       bean_id = ids.bean_id,
       grinder_id = ids.grinder_id,
@@ -34,7 +34,7 @@ local function draft_for(slug, ids)
     },
     method = method,
     steps = {},
-    params = {},
+    spec = {},
     flavor_tag_ids = {},
   }
 end
@@ -76,11 +76,12 @@ describe("ui/recipe (Recipe UI)", function()
 
     local espresso = labels_for("espresso")
     assert.is_true(espresso["Shot time"])
-    assert.is_true(espresso["Pre-infusion duration (s)"]) -- seeded method parameter
+    assert.is_true(espresso["Pre-infusion"]) -- method parameter
+    assert.is_nil(espresso["Total water"]) -- espresso hides water
 
     local pour_over = labels_for("pour_over")
-    assert.is_true(pour_over["Brew time"])
-    assert.is_true(pour_over["Dripper / filter"])
+    assert.is_true(pour_over["Total brew time"])
+    assert.is_true(pour_over["Dripper"])
     assert.is_nil(pour_over["Shot time"])
   end)
 
@@ -140,15 +141,14 @@ describe("ui/recipe (Recipe UI)", function()
 
     -- add two steps via the per-step form
     local function add_step(step_type, start_sec)
-      StepEditor._edit_step(Nav, editor.allowed_types, nil, function(values)
-        values.instruction = values.instruction or ""
+      StepEditor._edit_step(Nav, editor.method, nil, function(values)
         values.note = values.note or ""
         d.steps[#d.steps + 1] = values
         editor:_refresh()
       end)
       local sform = Nav:top()
       sform.values.step_type = step_type
-      sform.values.start_time_sec = start_sec
+      sform.values.start_time = start_sec
       sform:onMenuChoice(sform.item_table[#sform.item_table]) -- Done
     end
     add_step("bloom", 0)

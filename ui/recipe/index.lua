@@ -34,21 +34,21 @@ local RecipeIndex = Menu:extend {
 }
 
 function RecipeIndex:init()
-  self.method_id = nil
+  self.method_slug = nil
   self.search = ""
   self.sort = "updated"
-  local ok, methods = MethodService.list {}
+  local ok, methods = MethodService.list()
   self.methods = ok and methods or {}
   self.item_table = self:_items()
   Menu.init(self)
 end
 
 function RecipeIndex:_method_label()
-  if self.method_id == nil then
+  if self.method_slug == nil then
     return _("All")
   end
-  for _idx, m in ipairs(self.methods) do -- luacheck: ignore _idx
-    if m.id == self.method_id then
+  for _, m in ipairs(self.methods) do
+    if m.slug == self.method_slug then
       return m.name
     end
   end
@@ -81,14 +81,14 @@ function RecipeIndex:_items()
   }
 
   local ok, rows = SearchService.recipes {
-    method_id = self.method_id,
+    method_slug = self.method_slug,
     search = self.search,
     sort = self.sort,
   }
   rows = ok and rows or {}
   items[#items + 1] = { text = _("Recipes"), mandatory = tostring(#rows), _head = true }
   if #rows == 0 then
-    local unfiltered = self.method_id == nil and self.search == ""
+    local unfiltered = self.method_slug == nil and self.search == ""
     items[#items + 1] = {
       text = unfiltered and _("  No recipes yet. Add one from the Home screen.")
         or _("  No recipes match this filter."),
@@ -108,15 +108,15 @@ end
 
 function RecipeIndex:_pickMethod()
   local items = { { text = _("All methods"), value = false } }
-  for _idx, m in ipairs(self.methods) do -- luacheck: ignore _idx
-    items[#items + 1] = { text = m.name, value = m.id }
+  for _, m in ipairs(self.methods) do
+    items[#items + 1] = { text = m.name, value = m.slug }
   end
   ListPicker.show {
     title = _("Filter by method"),
     items = items,
-    current = self.method_id or false,
+    current = self.method_slug or false,
     on_select = function(value)
-      self.method_id = value or nil
+      self.method_slug = value or nil
       self:_refresh()
     end,
   }

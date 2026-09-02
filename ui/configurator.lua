@@ -26,7 +26,6 @@ local CATEGORIES = {
   { title = _("Grinders"), module = "ui/config/grinders" },
   { title = _("Ingredients"), module = "ui/config/ingredients" },
   { title = _("Flavor Tags"), module = "ui/config/flavor_tags" },
-  { title = _("Brew Methods"), module = "ui/config/methods" },
   { title = _("Backup & Restore"), module = "ui/backup" },
 }
 

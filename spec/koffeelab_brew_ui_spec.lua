@@ -17,7 +17,7 @@ local function draft_for(slug, ids)
   local _, method = MethodService.get_by_slug(slug)
   return {
     recipe = {
-      method_id = method.id,
+      method_slug = method.slug,
       title = "Test " .. slug,
       bean_id = ids.bean_id,
       grinder_id = ids.grinder_id,
@@ -31,7 +31,7 @@ local function draft_for(slug, ids)
     },
     method = method,
     steps = {},
-    params = {},
+    spec = {},
     flavor_tag_ids = {},
   }
 end

@@ -5,7 +5,6 @@ local BrewService = require("services/brew_service")
 local DrinkService = require("services/drink_service")
 local MethodService = require("services/method_service")
 local SearchService = require("services/search_service")
-local MethodRepo = require("db/repo/method")
 
 describe("services", function()
   local ids
@@ -17,10 +16,6 @@ describe("services", function()
   after_each(function()
     helper.teardown()
   end)
-
-  local function espresso_id()
-    return assert(MethodRepo.get_by_slug("espresso")).id
-  end
 
   describe("config_service", function()
     it("rejects an empty bean name and blocks hard delete", function()
@@ -34,23 +29,20 @@ describe("services", function()
     end)
 
     it("enforces grinder min ≤ max and step > 0", function()
-      local ok = ConfigService.grinders.create {
+      assert.is_false((ConfigService.grinders.create {
         name = "Bad",
         unit_name = "clicks",
         min_value = 30,
         max_value = 1,
         step_value = 1,
-      }
-      assert.is_false(ok)
-
-      local ok2 = ConfigService.grinders.create {
+      }))
+      assert.is_false((ConfigService.grinders.create {
         name = "Bad2",
         unit_name = "clicks",
         min_value = 1,
         max_value = 30,
         step_value = 0,
-      }
-      assert.is_false(ok2)
+      }))
     end)
 
     it("surfaces the duplicate-ingredient error from the repo", function()
@@ -63,69 +55,89 @@ describe("services", function()
 
   describe("recipe_service", function()
     it("rejects an empty title", function()
-      local ok, err = RecipeService.create { title = "", method_id = ids.method_id, dose_g = 15 }
+      local ok, err =
+        RecipeService.create { title = "", method_slug = ids.method_slug, dose_g = 15 }
       assert.is_false(ok)
       assert.are.equal("title is required", err)
     end)
 
-    it("rejects dose ≤ 0", function()
-      local ok, err =
-        RecipeService.create { title = "R", method_id = ids.method_id, dose_g = 0, water_g = 200 }
+    it("rejects an unknown method", function()
+      local ok, err = RecipeService.create { title = "R", method_slug = "chemex_pro", dose_g = 15 }
       assert.is_false(ok)
-      assert.is_truthy(err:match("dose"))
+      assert.is_truthy(err:match("brew method"))
+    end)
+
+    it("rejects dose ≤ 0", function()
+      local ok = RecipeService.create {
+        title = "R",
+        method_slug = ids.method_slug,
+        dose_g = 0,
+        water_g = 200,
+      }
+      assert.is_false(ok)
     end)
 
     it("rejects a sensory axis outside 1..5", function()
-      local ok = RecipeService.create {
+      assert.is_false((RecipeService.create {
         title = "R",
-        method_id = ids.method_id,
+        method_slug = ids.method_slug,
         dose_g = 15,
         water_g = 200,
         acidity = 7,
-      }
-      assert.is_false(ok)
-    end)
-
-    it("requires total water except for espresso", function()
-      local ok = RecipeService.create { title = "V60", method_id = ids.method_id, dose_g = 15 }
-      assert.is_false(ok)
-
-      local ok2 = RecipeService.create { title = "Shot", method_id = espresso_id(), dose_g = 18 }
-      assert.is_true(ok2)
-    end)
-
-    it("enforces required method parameters", function()
-      -- Make the pour_over dripper_type parameter required.
-      local pour_over = assert(MethodRepo.get_by_slug("pour_over"))
-      local param = pour_over.parameters[1]
-      assert(MethodRepo.update_user_method(pour_over.id, {}, {
-        parameters = {
-          {
-            key = param.key,
-            label = param.label,
-            data_type = param.data_type,
-            required = true,
-          },
-        },
       }))
+    end)
 
-      local ok, err = RecipeService.create {
-        title = "V60",
-        method_id = pour_over.id,
-        dose_g = 15,
-        water_g = 250,
-      }
+    it("requires total water for pour over but not espresso", function()
+      assert.is_false(
+        (RecipeService.create { title = "V60", method_slug = "pour_over", dose_g = 15 })
+      )
+      assert.is_true((RecipeService.create {
+        title = "Shot",
+        method_slug = "espresso",
+        dose_g = 18,
+        output_weight_g = 36,
+      }))
+    end)
+
+    it("rejects an invalid enum value for a method parameter", function()
+      local ok, err = RecipeService.create(
+        { title = "V60", method_slug = "pour_over", dose_g = 15, water_g = 250 },
+        nil,
+        { dripper = "Not a real dripper" }
+      )
       assert.is_false(ok)
-      assert.is_truthy(err:match(param.label))
+      assert.is_truthy(err:match("Dripper"))
     end)
 
     it("rejects a step type foreign to the method", function()
       local ok, err = RecipeService.create(
-        { title = "V60", method_id = ids.method_id, dose_g = 15, water_g = 250 },
-        { { step_type = "extract", start_time_sec = 0 } }
+        { title = "V60", method_slug = "pour_over", dose_g = 15, water_g = 250 },
+        { { step_type = "extract", start_time = 0 } }
       )
       assert.is_false(ok)
       assert.is_truthy(err:match("extract"))
+    end)
+
+    it("stores and reads back method spec and steps", function()
+      local ok, recipe = RecipeService.create(
+        { title = "V60", method_slug = "pour_over", dose_g = 15, water_g = 250 },
+        { { step_type = "bloom", start_time = 0, water = 45 } },
+        { dripper = "Origami" }
+      )
+      assert.is_true(ok)
+      local got = select(2, RecipeService.get(recipe.id))
+      assert.are.equal("Origami", got.spec.dripper)
+      assert.are.equal(45, got.steps[1].water)
+      assert.are.equal("Pour Over", got.method_name)
+    end)
+
+    it("toggles the favourite flag", function()
+      local recipe = select(
+        2,
+        RecipeService.create { title = "R", method_slug = "pour_over", dose_g = 15, water_g = 200 }
+      )
+      assert(RecipeService.set_favorite(recipe.id, true))
+      assert.are.equal(1, #select(2, SearchService.recipes { favorite = true }))
     end)
 
     it("blocks deleting a recipe used by a custom drink", function()
@@ -133,7 +145,7 @@ describe("services", function()
         2,
         RecipeService.create {
           title = "Base",
-          method_id = espresso_id(),
+          method_slug = "espresso",
           dose_g = 18,
           output_weight_g = 36,
         }
@@ -154,7 +166,7 @@ describe("services", function()
         2,
         RecipeService.create {
           title = "Lonely",
-          method_id = ids.method_id,
+          method_slug = ids.method_slug,
           dose_g = 15,
           water_g = 200,
         }
@@ -171,7 +183,7 @@ describe("services", function()
         2,
         RecipeService.create {
           title = "R",
-          method_id = ids.method_id,
+          method_slug = ids.method_slug,
           dose_g = 15,
           water_g = 200,
         }
@@ -200,7 +212,7 @@ describe("services", function()
         2,
         RecipeService.create {
           title = "Base",
-          method_id = espresso_id(),
+          method_slug = "espresso",
           dose_g = 18,
           output_weight_g = 36,
         }
@@ -235,24 +247,21 @@ describe("services", function()
   end)
 
   describe("method_service", function()
-    it("creates a user method and refuses to change a system slug", function()
-      assert(MethodService.create {
-        slug = "moka_pot",
-        name = "Moka Pot",
-        step_types = { "setup", "extract", "finish" },
-      })
-      local pour_over = assert(select(2, MethodService.get_by_slug("pour_over")))
-      local ok, err = MethodService.update(pour_over.id, { slug = "not_pour_over" })
-      assert.is_false(ok)
-      assert.is_truthy(err:match("slug"))
+    it("lists the built-in methods and rejects unknown slugs", function()
+      assert.are.equal(5, #select(2, MethodService.list()))
+      assert.is_false((MethodService.get("moka_pot")))
+      assert.are.equal("Espresso", select(2, MethodService.get("espresso")).name)
     end)
   end)
 
   describe("search_service", function()
     it("clamps an unknown sort to a safe default", function()
-      assert(
-        RecipeService.create { title = "A", method_id = ids.method_id, dose_g = 15, water_g = 200 }
-      )
+      assert(RecipeService.create {
+        title = "A",
+        method_slug = ids.method_slug,
+        dose_g = 15,
+        water_g = 200,
+      })
       local ok, rows = SearchService.recipes { sort = "'; DROP TABLE brew_recipes; --" }
       assert.is_true(ok)
       assert.are.equal(1, #rows)

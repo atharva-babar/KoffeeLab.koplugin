@@ -21,7 +21,7 @@ local function make_base(slug, ids)
   local _, method = MethodService.get_by_slug(slug)
   local draft = {
     recipe = {
-      method_id = method.id,
+      method_slug = method.slug,
       title = "Base " .. slug,
       bean_id = ids.bean_id,
       grinder_id = ids.grinder_id,
@@ -35,7 +35,7 @@ local function make_base(slug, ids)
     },
     method = method,
     steps = {},
-    params = {},
+    spec = {},
     flavor_tag_ids = {},
   }
   local ok, recipe = RecipeService.create(RecipeAddFlow.payload(draft))

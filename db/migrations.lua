@@ -1,32 +1,31 @@
 -- db/migrations.lua
--- Migration runner. Schema version lives in SQLite's PRAGMA user_version
--- (TECH_SOLUTION §1.19). Migration 1 applies the full DDL (db/schema.lua) and then
--- the system-method seed (db/seed.lua), all inside one transaction — any error
--- rolls the whole batch back and leaves user_version untouched.
+-- Migration runner. Schema version lives in PRAGMA user_version. v2 is a
+-- pre-release reset: it drops any legacy tables and rebuilds the v2 baseline
+-- (db/schema.lua). There is no data-preserving path from v1.
 
 local Schema = require("db/schema")
-local Seed = require("db/seed")
 local logger = require("logger")
 
 local Migrations = {}
 
-Migrations.CURRENT_SCHEMA_VERSION = 1
+Migrations.CURRENT_SCHEMA_VERSION = 2
 
 local function user_version(conn)
   return tonumber(conn:rowexec("PRAGMA user_version")) or 0
 end
 
--- migration[n] applies the change from version n-1 to n. Each runs inside the
--- runner's transaction and must be idempotent-safe only in the sense that the
--- runner never calls it once user_version >= n.
-local migration = {}
-
-migration[1] = function(conn)
+local function apply_baseline(conn)
+  for _, statement in ipairs(Schema.DROP_LEGACY) do
+    conn:exec(statement)
+  end
   for _, statement in ipairs(Schema.STATEMENTS) do
     conn:exec(statement)
   end
-  Seed.seed_system_methods(conn)
 end
+
+local migration = {}
+migration[1] = apply_baseline
+migration[2] = apply_baseline
 
 --- Bring `conn` up to CURRENT_SCHEMA_VERSION. No-op when already current.
 -- @return CURRENT_SCHEMA_VERSION on success, or nil, err on failure (rolled back).
