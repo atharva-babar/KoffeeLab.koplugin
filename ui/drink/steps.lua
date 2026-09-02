@@ -6,9 +6,8 @@
 -- the parent form's summary row.
 
 local FormScreen = require("ui/widgets/form_screen")
-local Menu = require("ui/widget/menu")
+local ScreenList = require("ui/screen_list")
 local TextInput = require("ui/widgets/text_input")
-local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local function edit_step(nav, step, on_done, on_remove, movers)
@@ -97,14 +96,8 @@ local function edit_step(nav, step, on_done, on_remove, movers)
   })
 end
 
-local DrinkSteps = Menu:extend {
+local DrinkSteps = ScreenList:extend {
   name = "koffeelab_drink_steps",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Process Steps"),
   draft = nil, -- required
   on_change = nil,
@@ -112,12 +105,19 @@ local DrinkSteps = Menu:extend {
 
 function DrinkSteps:init()
   self.steps = self.draft.steps
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
-function DrinkSteps:_items()
-  local items = { { text = "+ " .. _("Add step"), _add = true } }
+function DrinkSteps:buildItems()
+  local items = {
+    {
+      text = "+ " .. _("Add step"),
+      _add = true,
+      callback = function()
+        self:onMenuChoice { _add = true }
+      end,
+    },
+  }
   for i, step in ipairs(self.steps) do
     items[#items + 1] = {
       text = string.format(
@@ -127,6 +127,9 @@ function DrinkSteps:_items()
       ),
       mandatory = (step.note and step.note ~= "") and _("note") or "",
       _index = i,
+      callback = function()
+        self:onMenuChoice { _index = i }
+      end,
     }
   end
   return items
@@ -136,7 +139,7 @@ function DrinkSteps:_refresh()
   if self.on_change then
     self.on_change()
   end
-  self:switchItemTable(nil, self:_items(), 1)
+  self:refresh()
 end
 
 function DrinkSteps:onMenuChoice(item)
@@ -173,18 +176,6 @@ function DrinkSteps:onMenuChoice(item)
   end, movers)
   return true
 end
-
-function DrinkSteps:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-DrinkSteps.onClose = DrinkSteps._back
-DrinkSteps.onLeftButtonTap = DrinkSteps._back
 
 DrinkSteps._edit_step = edit_step
 

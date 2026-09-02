@@ -9,11 +9,10 @@ local DurationInput = require("ui/widgets/duration_input")
 local Format = require("util/format")
 local FormScreen = require("ui/widgets/form_screen")
 local ListPicker = require("ui/widgets/list_picker")
-local Menu = require("ui/widget/menu")
 local Methods = require("methods/init")
 local NumberInput = require("ui/widgets/number_input")
+local ScreenList = require("ui/screen_list")
 local TextInput = require("ui/widgets/text_input")
-local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local function field_row(key)
@@ -155,14 +154,8 @@ local function edit_step(nav, method, step, on_done, on_remove, movers)
   })
 end
 
-local StepEditor = Menu:extend {
+local StepEditor = ScreenList:extend {
   name = "koffeelab_recipe_steps",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Brew Steps"),
   draft = nil,
   on_change = nil,
@@ -171,14 +164,21 @@ local StepEditor = Menu:extend {
 function StepEditor:init()
   self.steps = self.draft.steps
   self.method = self.draft.method
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
-function StepEditor:_items()
+function StepEditor:buildItems()
   local total_water = Derive.total_water(self.steps)
   local total_brew = self.draft.recipe.brew_time_sec
-  local items = { { text = "+ " .. _("Add step"), _add = true } }
+  local items = {
+    {
+      text = "+ " .. _("Add step"),
+      _add = true,
+      callback = function()
+        self:onMenuChoice { _add = true }
+      end,
+    },
+  }
   for i, step in ipairs(self.steps) do
     local head = string.format("#%d", i)
     if step.start_time then
@@ -195,7 +195,14 @@ function StepEditor:_items()
     elseif step.water then
       bits[#bits + 1] = Format.grams(step.water)
     end
-    items[#items + 1] = { text = head, mandatory = table.concat(bits, "  \u{00B7}  "), _index = i }
+    items[#items + 1] = {
+      text = head,
+      mandatory = table.concat(bits, "  \u{00B7}  "),
+      _index = i,
+      callback = function()
+        self:onMenuChoice { _index = i }
+      end,
+    }
   end
   return items
 end
@@ -204,7 +211,7 @@ function StepEditor:_refresh()
   if self.on_change then
     self.on_change()
   end
-  self:switchItemTable(nil, self:_items(), 1)
+  self:refresh()
 end
 
 function StepEditor:onMenuChoice(item)
@@ -244,18 +251,6 @@ function StepEditor:onMenuChoice(item)
   end, movers)
   return true
 end
-
-function StepEditor:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-StepEditor.onClose = StepEditor._back
-StepEditor.onLeftButtonTap = StepEditor._back
 
 StepEditor._edit_step = edit_step
 

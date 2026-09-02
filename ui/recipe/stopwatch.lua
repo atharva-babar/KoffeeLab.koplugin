@@ -4,21 +4,14 @@
 -- is no scheduleIn, no refresh loop; between taps the screen never changes. Each
 -- tap reads os.time(); on Stop the elapsed seconds and any splits are handed back
 -- through `on_capture`. Fully optional — the caller can just leave the brew time
--- unset. Built on Menu so Back and large tap targets come for free.
+-- unset.
 
 local Format = require("util/format")
-local Menu = require("ui/widget/menu")
-local UIManager = require("ui/uimanager")
+local ScreenList = require("ui/screen_list")
 local _ = require("gettext")
 
-local Stopwatch = Menu:extend {
+local Stopwatch = ScreenList:extend {
   name = "koffeelab_recipe_stopwatch",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Capture Brew Time"),
   on_capture = nil, -- function(elapsed_sec_or_nil, splits_array)
 }
@@ -28,8 +21,7 @@ function Stopwatch:init()
   self.start_time = nil
   self.elapsed = 0
   self.splits = {} -- elapsed-second marks
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
 function Stopwatch:_shown_elapsed()
@@ -39,44 +31,53 @@ function Stopwatch:_shown_elapsed()
   return self.elapsed
 end
 
-function Stopwatch:_items()
+function Stopwatch:buildItems()
   local items = {
     {
       text = _("Elapsed"),
       mandatory = Format.duration(self:_shown_elapsed()) or "0:00",
-      _inert = true,
+      kind = "head",
     },
   }
 
+  local function act_row(text, act)
+    return {
+      text = text,
+      mandatory = "\u{203A}",
+      _act = act,
+      callback = function()
+        self:_do(act)
+      end,
+    }
+  end
   if self.state == "idle" then
-    items[#items + 1] = { text = _("Tap to start"), mandatory = "\u{203A}", _act = "start" }
+    items[#items + 1] = act_row(_("Tap to start"), "start")
   elseif self.state == "running" then
-    items[#items + 1] = { text = _("Split"), mandatory = "\u{203A}", _act = "split" }
-    items[#items + 1] = { text = _("Stop"), mandatory = "\u{203A}", _act = "stop" }
+    items[#items + 1] = act_row(_("Split"), "split")
+    items[#items + 1] = act_row(_("Stop"), "stop")
   else
-    items[#items + 1] = { text = _("Use this time"), mandatory = "\u{203A}", _act = "use" }
-    items[#items + 1] = { text = _("Restart"), mandatory = "\u{203A}", _act = "restart" }
+    items[#items + 1] = act_row(_("Use this time"), "use")
+    items[#items + 1] = act_row(_("Restart"), "restart")
   end
 
   if #self.splits > 0 then
-    items[#items + 1] = { text = _("Splits"), mandatory = tostring(#self.splits), _inert = true }
+    items[#items + 1] = { text = _("Splits"), mandatory = tostring(#self.splits), kind = "head" }
     for i, s in ipairs(self.splits) do
-      items[#items + 1] = {
-        text = string.format("  #%d", i),
-        mandatory = Format.duration(s) or "0:00",
-        _inert = true,
-      }
+      items[#items + 1] =
+        { text = string.format("#%d", i), mandatory = Format.duration(s) or "0:00" }
     end
   end
   return items
 end
 
-function Stopwatch:_repaint()
-  self:switchItemTable(self.title, self:_items(), 1)
-end
+Stopwatch._items = Stopwatch.buildItems
+Stopwatch._repaint = ScreenList.refresh
 
 function Stopwatch:onMenuChoice(item)
-  local act = item._act
+  return self:_do(item and item._act)
+end
+
+function Stopwatch:_do(act)
   if act == "start" then
     self.state = "running"
     self.start_time = os.time()
@@ -96,24 +97,12 @@ function Stopwatch:onMenuChoice(item)
     if self.on_capture then
       self.on_capture(self.elapsed > 0 and self.elapsed or nil, self.splits)
     end
-    return self:_back()
+    return self:onReturn()
   end
   if act then
     self:_repaint()
   end
   return true
 end
-
-function Stopwatch:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-Stopwatch.onClose = Stopwatch._back
-Stopwatch.onLeftButtonTap = Stopwatch._back
 
 return Stopwatch

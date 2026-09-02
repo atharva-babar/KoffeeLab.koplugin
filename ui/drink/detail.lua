@@ -2,35 +2,27 @@
 -- Custom-drink detail page (TECH_SOLUTION §2.15 / §2.14). Read-only presentation
 -- of one drink: temperature, base recipe + amount used, the derived remaining
 -- output (never stored — §3.13), extra ingredients, process steps, rating and
--- comment, plus Edit / Delete actions (§2.17). Built on Menu; informational rows
--- are inert.
+-- comment, plus Edit / Delete actions (§2.17). A scrolling sectioned list.
 
 local AddFlow = require("ui/drink/add_flow")
 local ConfirmDialog = require("ui/widgets/confirm_dialog")
 local Constants = require("util/constants")
-local Format = require("util/format")
-local Menu = require("ui/widget/menu")
 local DrinkService = require("services/drink_service")
+local Format = require("util/format")
+local ScreenList = require("ui/screen_list")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
-local DrinkDetail = Menu:extend {
+local DrinkDetail = ScreenList:extend {
   name = "koffeelab_drink_detail",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   drink_id = nil, -- required
-  on_changed = nil, -- optional: called after edit / delete (Phase 8)
+  on_changed = nil, -- optional: called after edit / delete
 }
 
 function DrinkDetail:init()
   self:_fetch()
   self.title = self.drink and self.drink.title or _("Drink")
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
 function DrinkDetail:_fetch()
@@ -53,10 +45,10 @@ local function amount_str(amount, unit)
   return Format.grams(n)
 end
 
-function DrinkDetail:_items()
+function DrinkDetail:buildItems()
   local d = self.drink
   if not d then
-    return { { text = _("Drink not found."), _inert = true } }
+    return { { text = _("Drink not found."), kind = "text", _inert = true } }
   end
   local items = {}
 
@@ -77,21 +69,21 @@ function DrinkDetail:_items()
 
   if #(d.ingredients or {}) > 0 then
     items[#items + 1] =
-      { text = _("Ingredients"), mandatory = tostring(#d.ingredients), _inert = true }
+      { text = _("Ingredients"), mandatory = tostring(#d.ingredients), kind = "head" }
     for _idx, ing in ipairs(d.ingredients) do -- luacheck: ignore _idx
       items[#items + 1] = {
-        text = "  " .. (ing.ingredient_name or _("?")),
+        text = ing.ingredient_name or _("?"),
         mandatory = amount_str(ing.amount, ing.unit) or _("\u{2014}"),
       }
     end
   end
 
   if #(d.steps or {}) > 0 then
-    items[#items + 1] = { text = _("Steps"), mandatory = tostring(#d.steps), _inert = true }
+    items[#items + 1] = { text = _("Steps"), mandatory = tostring(#d.steps), kind = "head" }
     for i, step in ipairs(d.steps) do
-      items[#items + 1] = { text = string.format("  #%d  %s", i, step.instruction or "") }
+      items[#items + 1] = { text = string.format("#%d  %s", i, step.instruction or "") }
       if step.note and step.note ~= "" then
-        items[#items + 1] = { text = "      " .. step.note, _inert = true }
+        items[#items + 1] = { text = step.note, kind = "text" }
       end
     end
   end
@@ -100,71 +92,73 @@ function DrinkDetail:_items()
     items[#items + 1] = row(_("Rating"), Format.rating_stars(tonumber(d.rating)))
   end
   if d.comment and d.comment ~= "" then
-    items[#items + 1] = { text = _("Comment"), mandatory = "", _inert = true }
-    items[#items + 1] = { text = "  " .. d.comment, _inert = true }
+    items[#items + 1] = { text = _("Comment"), kind = "head" }
+    items[#items + 1] = { text = d.comment, kind = "text" }
   end
 
-  items[#items + 1] = { text = _("Edit"), mandatory = "\u{203A}", _action = "edit" }
-  items[#items + 1] = { text = _("Delete"), mandatory = "\u{203A}", _action = "delete" }
+  items[#items + 1] = { text = _("Actions"), kind = "head" }
+  items[#items + 1] = {
+    text = _("Edit"),
+    mandatory = "\u{203A}",
+    _action = "edit",
+    callback = function()
+      self:_edit()
+    end,
+  }
+  items[#items + 1] = {
+    text = _("Delete"),
+    mandatory = "\u{203A}",
+    _action = "delete",
+    callback = function()
+      self:_delete()
+    end,
+  }
   return items
 end
 
 function DrinkDetail:_reload()
   self:_fetch()
-  self:switchItemTable(self.drink and self.drink.title or _("Drink"), self:_items(), 1)
+  self.title = self.drink and self.drink.title or _("Drink")
+  self:refresh()
 end
 
-function DrinkDetail:onMenuChoice(item)
-  local action = item and item._action
-  if action == "edit" then
-    ConfirmDialog.confirm {
-      text = _("Edit drink?\n\nExisting drink data will be changed."),
-      ok_text = _("Continue"),
-      on_confirm = function()
-        AddFlow.edit(self.drink_id, {
-          on_saved = function()
-            if self.on_changed then
-              self.on_changed()
-            end
-            self:_reload()
-          end,
-        })
-      end,
-    }
-  elseif action == "delete" then
-    ConfirmDialog.destructive {
-      text = _("Delete drink?\n\nThis removes the drink, its ingredients and its steps."),
-      ok_text = _("Delete"),
-      on_confirm = function()
-        local ok, err = DrinkService.delete(self.drink_id)
-        if not ok then
-          ConfirmDialog.blocked { text = tostring(err) }
-          return
-        end
-        if self.on_changed then
-          self.on_changed()
-        end
-        if self.nav then
-          self.nav:pop()
-        else
-          UIManager:close(self)
-        end
-      end,
-    }
-  end
-  return true
+function DrinkDetail:_edit()
+  ConfirmDialog.confirm {
+    text = _("Edit drink?\n\nExisting drink data will be changed."),
+    ok_text = _("Continue"),
+    on_confirm = function()
+      AddFlow.edit(self.drink_id, {
+        on_saved = function()
+          if self.on_changed then
+            self.on_changed()
+          end
+          self:_reload()
+        end,
+      })
+    end,
+  }
 end
 
-function DrinkDetail:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
+function DrinkDetail:_delete()
+  ConfirmDialog.destructive {
+    text = _("Delete drink?\n\nThis removes the drink, its ingredients and its steps."),
+    ok_text = _("Delete"),
+    on_confirm = function()
+      local ok, err = DrinkService.delete(self.drink_id)
+      if not ok then
+        ConfirmDialog.blocked { text = tostring(err) }
+        return
+      end
+      if self.on_changed then
+        self.on_changed()
+      end
+      if self.nav then
+        self.nav:pop()
+      else
+        UIManager:close(self)
+      end
+    end,
+  }
 end
-
-DrinkDetail.onClose = DrinkDetail._back
-DrinkDetail.onLeftButtonTap = DrinkDetail._back
 
 return DrinkDetail

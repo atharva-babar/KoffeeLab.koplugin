@@ -27,7 +27,7 @@ function NumberInput.show(opts)
   local spin
   spin = SpinWidget:new {
     title_text = opts.title or _("Enter a number"),
-    info_text = opts.info_text,
+    info_text = opts.info_text or _("Tap the number to type it"),
     value = opts.value or opts.min or 0,
     value_min = opts.min,
     value_max = opts.max,

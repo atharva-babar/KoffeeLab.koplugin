@@ -182,6 +182,35 @@ describe("ui/widgets", function()
     end
   end)
 
+  it("GrindDial maps the segmented control to a clamped value", function()
+    local GrindDial = require("ui/widgets/grind_dial")
+    local seen
+    local d = GrindDial.show {
+      value = 15,
+      min = 1,
+      max = 30,
+      step = 1,
+      default = 15,
+      unit = "clicks",
+      on_change = function(v)
+        seen = v
+      end,
+    }
+    assert.is_true(UIManager:isWidgetShown(d))
+    d:paintTo(Screen.bb, 0, 0)
+
+    d._adjust(1) -- first segment -> min
+    assert.are.equal(1, seen)
+    assert.are.equal(1, d._value())
+    d._adjust("+")
+    assert.are.equal(2, seen)
+    d._adjust("-")
+    d._adjust("-") -- clamps at min
+    assert.are.equal(1, seen)
+
+    UIManager:close(d)
+  end)
+
   it("Home screen builds and its overflow menu opens", function()
     local HomeScreen = require("ui/home")
     local home = HomeScreen:new {}

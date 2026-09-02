@@ -7,11 +7,12 @@
 -- form's summary row.
 
 local ConfigService = require("services/config_service")
+local Constants = require("util/constants")
 local FormScreen = require("ui/widgets/form_screen")
 local InfoMessage = require("ui/widget/infomessage")
 local ListPicker = require("ui/widgets/list_picker")
-local Menu = require("ui/widget/menu")
 local NumberInput = require("ui/widgets/number_input")
+local ScreenList = require("ui/screen_list")
 local TextInput = require("ui/widgets/text_input")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
@@ -116,12 +117,16 @@ local function edit_ingredient(nav, row, on_done, on_remove)
         return v.unit
       end,
       edit = function(f)
-        TextInput.show {
+        local items = {}
+        for _idx, u in ipairs(Constants.INGREDIENT_UNITS) do -- luacheck: ignore _idx
+          items[#items + 1] = { text = u, value = u }
+        end
+        ListPicker.show {
           title = _("Unit"),
-          value = f.values.unit,
-          hint = _("g / ml / shots"),
-          on_ok = function(t)
-            f:set("unit", t ~= "" and t or "g")
+          items = items,
+          current = f.values.unit,
+          on_select = function(u)
+            f:set("unit", u or "g")
           end,
         }
       end,
@@ -165,14 +170,8 @@ end
 
 -- ── the ingredient list ─────────────────────────────────────────────────────
 
-local DrinkIngredients = Menu:extend {
+local DrinkIngredients = ScreenList:extend {
   name = "koffeelab_drink_ingredients",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Ingredients"),
   draft = nil, -- required
   on_change = nil,
@@ -180,17 +179,27 @@ local DrinkIngredients = Menu:extend {
 
 function DrinkIngredients:init()
   self.rows = self.draft.ingredients
-  self.item_table = self:_items()
-  Menu.init(self)
+  ScreenList.init(self)
 end
 
-function DrinkIngredients:_items()
-  local items = { { text = "+ " .. _("Add ingredient"), _add = true } }
+function DrinkIngredients:buildItems()
+  local items = {
+    {
+      text = "+ " .. _("Add ingredient"),
+      _add = true,
+      callback = function()
+        self:onMenuChoice { _add = true }
+      end,
+    },
+  }
   for i, ing in ipairs(self.rows) do
     items[#items + 1] = {
       text = ing.ingredient_name or _("?"),
       mandatory = amount_str(ing.amount, ing.unit) or _("\u{2014}"),
       _index = i,
+      callback = function()
+        self:onMenuChoice { _index = i }
+      end,
     }
   end
   return items
@@ -200,7 +209,7 @@ function DrinkIngredients:_refresh()
   if self.on_change then
     self.on_change()
   end
-  self:switchItemTable(nil, self:_items(), 1)
+  self:refresh()
 end
 
 function DrinkIngredients:onMenuChoice(item)
@@ -224,18 +233,6 @@ function DrinkIngredients:onMenuChoice(item)
   end)
   return true
 end
-
-function DrinkIngredients:_back()
-  if self.nav then
-    self.nav:pop()
-  else
-    UIManager:close(self)
-  end
-  return true
-end
-
-DrinkIngredients.onClose = DrinkIngredients._back
-DrinkIngredients.onLeftButtonTap = DrinkIngredients._back
 
 DrinkIngredients._edit_ingredient = edit_ingredient
 
