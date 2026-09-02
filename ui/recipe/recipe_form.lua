@@ -1,14 +1,14 @@
 -- ui/recipe/recipe_form.lua
--- The method-driven recipe form. Rows come from the chosen method's `fields`
--- (shared columns it surfaces) and `params`; there is no `if method == …`
--- branching. Bean / grind / steps / sensory push their own screen. Save goes
--- through ui/recipe/add_flow -> recipe_service.
+-- The method-driven recipe wizard (design-language §4.6). Pages: Basics / Brew /
+-- Steps / Output. Field cards come from the chosen method's `fields` (shared
+-- columns it surfaces) and `params` — there is no `if method == …` branching.
+-- Bean / grind / steps / sensory push their own screen. Save goes through
+-- ui/recipe/add_flow -> recipe_service.
 
 local BeanSelect = require("ui/recipe/bean_select")
 local Constants = require("util/constants")
 local DurationInput = require("ui/widgets/duration_input")
 local Format = require("util/format")
-local FormScreen = require("ui/widgets/form_screen")
 local GrindSelect = require("ui/recipe/grind_select")
 local InfoMessage = require("ui/widget/infomessage")
 local ListPicker = require("ui/widgets/list_picker")
@@ -17,9 +17,10 @@ local Sensory = require("ui/recipe/sensory")
 local StepEditor = require("ui/recipe/step_editor")
 local TextInput = require("ui/widgets/text_input")
 local UIManager = require("ui/uimanager")
+local Wizard = require("ui/widgets/wizard")
 local _ = require("gettext")
 
-local RecipeForm = FormScreen:extend {
+local RecipeForm = Wizard:extend {
   name = "koffeelab_recipe_form",
   draft = nil,
   on_saved = nil,
@@ -189,10 +190,10 @@ function RecipeForm:init()
   local draft = assert(self.draft, "RecipeForm needs a draft")
   local method = draft.method
   self.editing = draft.editing_id ~= nil
-  self.title = self.editing and _("Edit Recipe") or _("New Recipe")
+  self.wizard_title = self.editing and _("Edit Recipe") or _("New Recipe")
   self.values = draft.recipe
 
-  local fields = {
+  local basics = {
     {
       key = "title",
       label = _("Title"),
@@ -223,6 +224,9 @@ function RecipeForm:init()
         })
       end,
     },
+  }
+
+  local brew = {
     {
       key = "bean_id",
       label = _("Bean"),
@@ -266,21 +270,21 @@ function RecipeForm:init()
     local spec = method.fields and method.fields[name]
     if spec and not spec.hidden then
       if name == "water_temp" then
-        fields[#fields + 1] = temp_row(draft, spec)
+        brew[#brew + 1] = temp_row(draft, spec)
       elseif name == "brew_time" then
-        fields[#fields + 1] = brew_time_row(draft, spec)
+        brew[#brew + 1] = brew_time_row(draft, spec)
       else
-        fields[#fields + 1] = grams_row(draft, name, spec)
+        brew[#brew + 1] = grams_row(draft, name, spec)
       end
     end
   end
-
   for _, param in ipairs(method.params or {}) do
-    fields[#fields + 1] = param_row(param, draft)
+    brew[#brew + 1] = param_row(param, draft)
   end
 
+  local output = {}
   if method.output_note then
-    fields[#fields + 1] = {
+    output[#output + 1] = {
       key = "output_note",
       label = method.output_note.label or _("Expected result"),
       display = function()
@@ -298,25 +302,7 @@ function RecipeForm:init()
       end,
     }
   end
-
-  fields[#fields + 1] = {
-    key = "_steps",
-    label = _("Brew steps"),
-    display = function()
-      local n = #draft.steps
-      return n > 0 and tostring(n) or nil
-    end,
-    edit = function(form)
-      form.nav:push(StepEditor:new {
-        draft = draft,
-        on_change = function()
-          form:refreshItems()
-        end,
-      })
-    end,
-  }
-
-  fields[#fields + 1] = {
+  output[#output + 1] = {
     key = "_sensory",
     label = _("Flavor & sensory"),
     display = function()
@@ -342,20 +328,48 @@ function RecipeForm:init()
     end,
   }
 
-  self.fields = fields
-  self.actions = {
+  local steps = {
     {
-      text = _("Save recipe"),
-      callback = function(form)
-        form:_save()
+      key = "_steps",
+      label = _("Brew steps"),
+      display = function()
+        local n = #draft.steps
+        return n > 0 and string.format(_("%d steps"), n) or nil
+      end,
+      edit = function(form)
+        form.nav:push(StepEditor:new {
+          draft = draft,
+          on_change = function()
+            form:refreshItems()
+          end,
+        })
       end,
     },
   }
 
-  FormScreen.init(self)
+  self.pages = {
+    {
+      title = _("Basics"),
+      fields = basics,
+      validate = function(v)
+        if not v.title or v.title == "" then
+          return _("Give the recipe a title.")
+        end
+      end,
+    },
+    { title = _("Brew"), fields = brew },
+    { title = _("Steps"), fields = steps },
+    { title = _("Output"), fields = output },
+  }
+
+  Wizard.init(self)
 end
 
-function RecipeForm:_save()
+function RecipeForm:on_save()
+  self:_persist()
+end
+
+function RecipeForm:_persist()
   local ok, result = require("ui/recipe/add_flow").save(self.draft)
   if not ok then
     UIManager:show(InfoMessage:new { text = tostring(result), icon = "notice-warning" })

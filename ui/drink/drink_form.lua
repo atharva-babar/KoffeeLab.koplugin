@@ -1,22 +1,22 @@
 -- ui/drink/drink_form.lua
--- The custom-drink form (TECH_SOLUTION §2.11–§2.13). One vertical FormScreen:
--- title, temperature mode, base recipe + amount used (with the recipe output
--- shown so partial use is explicit), the ingredient and process sub-editors,
--- rating and comment. Ingredients / steps each push their own screen; everything
--- writes into the shared `draft`. Save goes through `drink_service` (validation +
--- one transaction) via `ui/drink/add_flow`.
+-- The custom-drink wizard (design-language §4.6). Two pages: Basics (title,
+-- temperature, base recipe + amount used — the recipe output is shown so partial
+-- use is explicit) and Extras (ingredients, process steps, rating, comment).
+-- Ingredients / steps push their own sub-editor; everything writes into the
+-- shared `draft`. Save goes through `drink_service` (validation + one
+-- transaction) via `ui/drink/add_flow`.
 
 local BaseSelect = require("ui/drink/base_select")
 local Constants = require("util/constants")
 local DrinkIngredients = require("ui/drink/ingredients")
 local DrinkSteps = require("ui/drink/steps")
 local Format = require("util/format")
-local FormScreen = require("ui/widgets/form_screen")
 local InfoMessage = require("ui/widget/infomessage")
 local ListPicker = require("ui/widgets/list_picker")
 local NumberInput = require("ui/widgets/number_input")
 local TextInput = require("ui/widgets/text_input")
 local UIManager = require("ui/uimanager")
+local Wizard = require("ui/widgets/wizard")
 local _ = require("gettext")
 
 local RATING_ITEMS = {
@@ -28,7 +28,7 @@ local RATING_ITEMS = {
   { text = "5", value = 5 },
 }
 
-local DrinkForm = FormScreen:extend {
+local DrinkForm = Wizard:extend {
   name = "koffeelab_drink_form",
   draft = nil, -- required
   on_saved = nil, -- optional: function(drink_id)
@@ -37,10 +37,10 @@ local DrinkForm = FormScreen:extend {
 function DrinkForm:init()
   local draft = assert(self.draft, "DrinkForm needs a draft")
   self.editing = draft.editing_id ~= nil
-  self.title = self.editing and _("Edit Custom Drink") or _("New Custom Drink")
+  self.wizard_title = self.editing and _("Edit Custom Drink") or _("New Custom Drink")
   self.values = draft.drink
 
-  local fields = {
+  local basics = {
     {
       key = "title",
       label = _("Title"),
@@ -123,12 +123,15 @@ function DrinkForm:init()
         }
       end,
     },
+  }
+
+  local extras = {
     {
       key = "_ingredients",
       label = _("Ingredients"),
       display = function()
         local n = #draft.ingredients
-        return n > 0 and tostring(n) or nil
+        return n > 0 and string.format(_("%d ingredients"), n) or nil
       end,
       edit = function(form)
         form.nav:push(DrinkIngredients:new {
@@ -144,7 +147,7 @@ function DrinkForm:init()
       label = _("Process steps"),
       display = function()
         local n = #draft.steps
-        return n > 0 and tostring(n) or nil
+        return n > 0 and string.format(_("%d steps"), n) or nil
       end,
       edit = function(form)
         form.nav:push(DrinkSteps:new {
@@ -190,20 +193,23 @@ function DrinkForm:init()
     },
   }
 
-  self.fields = fields
-  self.actions = {
+  self.pages = {
     {
-      text = _("Save drink"),
-      callback = function(form)
-        form:_save()
+      title = _("Basics"),
+      fields = basics,
+      validate = function(v)
+        if not v.title or v.title == "" then
+          return _("Give the drink a title.")
+        end
       end,
     },
+    { title = _("Extras"), fields = extras },
   }
 
-  FormScreen.init(self)
+  Wizard.init(self)
 end
 
-function DrinkForm:_save()
+function DrinkForm:on_save()
   local ok, result = require("ui/drink/add_flow").save(self.draft)
   if not ok then
     UIManager:show(InfoMessage:new { text = tostring(result), icon = "notice-warning" })

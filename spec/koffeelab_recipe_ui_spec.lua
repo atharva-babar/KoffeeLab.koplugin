@@ -68,8 +68,8 @@ describe("ui/recipe (Recipe UI)", function()
     local function labels_for(slug)
       local form = RecipeForm:new { draft = draft_for(slug, ids) }
       local seen = {}
-      for _, item in ipairs(form.item_table) do
-        seen[item.text] = true
+      for _, f in ipairs(form.all_fields) do
+        seen[f.label] = true
       end
       return seen
     end

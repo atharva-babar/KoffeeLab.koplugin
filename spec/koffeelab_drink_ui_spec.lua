@@ -188,7 +188,7 @@ describe("ui/drink (Custom Drinks UI — Phase 8)", function()
           saved_id = id
         end,
       })
-      tap_action(form, "Save drink")
+      form:_save()
 
       assert.is_truthy(saved_id)
       assert.are.equal("koffeelab_drink_detail", Nav:top().name)
@@ -205,7 +205,7 @@ describe("ui/drink (Custom Drinks UI — Phase 8)", function()
       local draft = fresh_draft("hot")
       draft.drink.title = "Broken"
       local form = Nav:push(DrinkForm:new { draft = draft })
-      tap_action(form, "Save drink")
+      form:_save()
       -- still on the form; nothing persisted
       assert.are.equal("koffeelab_drink_form", Nav:top().name)
       local _, rows = DrinkService.list_for_index {}
@@ -234,7 +234,7 @@ describe("ui/drink (Custom Drinks UI — Phase 8)", function()
 
       form.values.title = "Gibraltar"
       form.values.base_amount = 20
-      tap_action(form, "Save drink")
+      form:_save()
 
       local _, updated = DrinkService.get(drink.id)
       assert.are.equal("Gibraltar", updated.title)

@@ -266,8 +266,14 @@ function ScreenBase:_goBack()
   return true
 end
 
-ScreenBase.onReturn = ScreenBase._goBack
-ScreenBase.onClose = ScreenBase._goBack
+-- dispatch dynamically so a subclass that overrides _goBack (e.g. the Wizard,
+-- whose Back steps to the previous page) is honoured here too
+function ScreenBase:onReturn()
+  return self:_goBack()
+end
+function ScreenBase:onClose()
+  return self:_goBack()
+end
 
 function ScreenBase:onMultiSwipe()
   -- any multiswipe direction goes back (consistent with KOReader fullscreen widgets)
