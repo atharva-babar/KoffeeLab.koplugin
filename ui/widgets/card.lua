@@ -1,10 +1,13 @@
 -- ui/widgets/card.lua
--- Card — a tappable bordered box, the KoffeeLab primitive for home tiles and
--- section blocks. One repaint per tap. Not tappable when `on_tap` is nil (an
--- empty-state card).
+-- Card — the KoffeeLab primitive: a rounded, borderless, light-grey box on the
+-- white page. One repaint per tap. Inert (not tappable) when `on_tap` is nil, e.g.
+-- an empty-state card or a plain content block.
 --
 --   Card:new{ width = w, height = h, on_tap = fn, show_parent = screen,
---             SomeChildWidget:new{ ... } }
+--             active = false, SomeChildWidget:new{ ... } }
+--
+-- `height` omitted => the card hugs its content. `active = true` paints the
+-- pressed grey from the start (a selected/current card).
 
 local Design = require("ui/design")
 local Device = require("device")
@@ -19,15 +22,16 @@ local Card = InputContainer:extend {
   height = nil,
   on_tap = nil,
   show_parent = nil,
+  active = false,
+  padding = nil, -- overrides Design.pad.card
 }
 
 function Card:init()
   self.frame = FrameContainer:new {
-    background = Design.color.bg,
-    bordersize = Design.border,
-    color = Design.color.hairline,
+    background = self.active and Design.color.card_active or Design.color.card,
+    bordersize = 0,
     radius = Design.radius,
-    padding = Design.pad.md,
+    padding = self.padding or Design.pad.card,
     margin = 0,
     width = self.width,
     height = self.height,
@@ -53,6 +57,8 @@ function Card:onTap()
   if not self.on_tap then
     return true
   end
+  -- brief pressed flash; the caller's action then drives the real repaint
+  self.frame.background = Design.color.card_active
   UIManager:setDirty(self.show_parent or self, "ui")
   self.on_tap()
   return true

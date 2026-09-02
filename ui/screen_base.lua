@@ -12,6 +12,13 @@
 --     return SomeWidget:new{ width = self.screen_w, height = self.content_height }
 --   end
 --
+-- The contextual bottom navbar (docs/design-language.md §3.7) is opt-in via the
+-- `navbar` field: a preset name ("list" | "detail_recipe" | "detail_drink" |
+-- "wizard" | "home" | "index" | "configurator"), or an explicit item list. Generic
+-- keys (home / index / configurator / add* / back) are handled here; the rest
+-- (filter / sort / search / edit / delete / save / next / exit / brew_again /
+-- favourite) dispatch to `self:onNavAction(key)`, which subclasses override.
+--
 -- Optional hook: `MyScreen:onCleanup()` is called once when the screen closes,
 -- for releasing resources (DB cursors, cached rows, …).
 
@@ -30,23 +37,36 @@ local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local Screen = Device.screen
 
+-- Contextual navbar item sets, keyed by preset name (design-language §3.7).
+local NAVBARS = {
+  home = { "home", "add_recipe", "add_drink", "index", "configurator" },
+  index = { "home", "index", "add", "configurator" },
+  configurator = { "home", "index", "add", "configurator" },
+  list = { "home", "filter", "sort", "search", "back" },
+  detail_recipe = { "home", "edit", "delete", "brew_again", "favourite" },
+  detail_drink = { "home", "edit", "delete" },
+  wizard = { "back", "save", "exit" },
+}
+
 local ScreenBase = InputContainer:extend {
   name = "koffeelab_screen",
   title = "",
   -- set to true to hide the back chevron (root screens whose Back closes the plugin)
   no_back_button = false,
-  -- optional titlebar right-hand icon + handler (e.g. an overflow menu)
-  right_icon = nil,
   covers_fullscreen = true,
-  -- opt-in: a Navbar key ("home"|"index"|"favourites"|"configurator") pins the
-  -- bottom nav to this screen; nil = no navbar (deep screens).
+  -- opt-in bottom navbar: a preset name from NAVBARS above, or an explicit item
+  -- list ({ "home", "filter", ... } or { { key, icon, label }, ... }). nil = none.
   navbar = nil,
+  -- the highlighted cell; defaults to the preset name when `navbar` is a string.
+  navbar_active = nil,
   -- opt-in: wrap the content in a ScrollableContainer.
   scroll = false,
 }
 
---- Override in a subclass that sets `right_icon`.
-function ScreenBase:onRightButton() end
+ScreenBase.NAVBARS = NAVBARS
+
+--- Screen-specific navbar keys (filter / sort / edit / …) land here. Override.
+function ScreenBase:onNavAction(_key) end
 
 function ScreenBase:init()
   self.screen_w = Screen:getWidth()
@@ -75,12 +95,20 @@ function ScreenBase:init()
     left_icon_tap_callback = function()
       self:onReturn()
     end,
-    right_icon = self.right_icon,
-    right_icon_tap_callback = self.right_icon and function()
-      self:onRightButton()
-    end or nil,
     show_parent = self,
   }
+
+  -- resolve the navbar spec (preset name -> item list) once
+  local nav_items, nav_active
+  if self.navbar then
+    if type(self.navbar) == "string" then
+      nav_items = NAVBARS[self.navbar] or { self.navbar }
+      nav_active = self.navbar_active or self.navbar
+    else
+      nav_items = self.navbar
+      nav_active = self.navbar_active
+    end
+  end
 
   local nav_h = self.navbar and Navbar.HEIGHT or 0
   self.content_height = self.screen_h - self.title_bar:getHeight() - nav_h
@@ -111,7 +139,8 @@ function ScreenBase:init()
   if self.navbar then
     self.navbar_widget = Navbar:new {
       width = self.screen_w,
-      active = self.navbar,
+      items = nav_items,
+      active = nav_active,
       show_parent = self,
       on_select = function(key)
         self:_navSelect(key)
@@ -139,8 +168,9 @@ function ScreenBase:init()
   self[1] = self.main_frame
 end
 
---- Navbar tap handler. Keep the back-stack shallow: reset to Home, then push the
---- target so repeated navbar taps don't grow the stack.
+--- Navbar tap handler. Generic navigation keys are handled here (resetting to
+--- Home first so repeated navbar taps don't grow the stack); everything else is
+--- a screen-specific verb handed to `self:onNavAction(key)`.
 function ScreenBase:_navSelect(key)
   local Nav = self.nav or require("ui/nav")
   if key == "home" then
@@ -156,6 +186,14 @@ function ScreenBase:_navSelect(key)
     Nav:push(require("ui/configurator"):new {})
   elseif key == "add" then
     self:_navAdd()
+  elseif key == "add_recipe" then
+    require("ui/recipe/add_flow").start {}
+  elseif key == "add_drink" then
+    require("ui/drink/add_flow").start {}
+  elseif key == "back" then
+    self:_goBack()
+  else
+    self:onNavAction(key)
   end
 end
 

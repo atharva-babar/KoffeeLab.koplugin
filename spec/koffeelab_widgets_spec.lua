@@ -149,36 +149,72 @@ describe("ui/widgets", function()
     assert.is_true(tapped)
   end)
 
-  it("Navbar renders five cells and reports the tapped key", function()
+  it("Navbar renders a contextual item set and reports the tapped key", function()
     local Navbar = require("ui/widgets/navbar")
     local seen
     local nav = Navbar:new {
       width = 600,
+      items = { "home", "filter", "sort", "search", "back" },
       active = "home",
       on_select = function(key)
         seen = key
       end,
     }
     assert.are.equal(5, #nav._ranges)
+    assert.are.equal("back", nav._ranges[5].key)
     assert.is_true(Navbar.HEIGHT > 0)
     nav:paintTo(Screen.bb, 0, 0)
-    -- a tap near the far right lands on the last cell (configurator)
-    nav:onTap(nil, { pos = { x = 590, y = 0 } })
-    assert.are.equal("configurator", seen)
+    -- a tap near the far right lands on the last cell
+    nav:onTap(nil, { pos = { x = nav._ranges[5].x0 + 2, y = 0 } })
+    assert.are.equal("back", seen)
+
+    -- a short bar (2 cells) stays centred, not stretched full width
+    local short = Navbar:new { width = 600, items = { "back", "save" } }
+    assert.are.equal(2, #short._ranges)
+    assert.is_true(short._ranges[1].x0 > 0)
+    short:paintTo(Screen.bb, 0, 0)
   end)
 
-  it("plugin SVG icons resolve and paint", function()
+  it("every plugin SVG icon resolves and paints at 22 and 48 px", function()
     local IconWidget = require("ui/widget/iconwidget")
-    for _, name in ipairs { "home", "index", "add", "favorite", "configurator", "pour_over" } do
-      local w = IconWidget:new {
-        file = Paths.icon(name),
-        width = 48,
-        height = 48,
-        is_icon = true,
-        alpha = true,
-      }
-      w:paintTo(Screen.bb, 0, 0)
-      w:free()
+    local names = {
+      "home",
+      "index",
+      "add",
+      "add_recipe",
+      "add_drink",
+      "configurator",
+      "filter",
+      "sort",
+      "search",
+      "back",
+      "next",
+      "exit",
+      "edit",
+      "delete",
+      "brew_again",
+      "favorite",
+      "favorite_filled",
+      "save",
+      "custom_drink",
+      "pour_over",
+      "aeropress",
+      "french_press",
+      "espresso",
+      "cold_brew",
+    }
+    for _, name in ipairs(names) do
+      for _, sz in ipairs { 22, 48 } do
+        local w = IconWidget:new {
+          file = Paths.icon(name),
+          width = sz,
+          height = sz,
+          is_icon = true,
+          alpha = true,
+        }
+        w:paintTo(Screen.bb, 0, 0)
+        w:free()
+      end
     end
   end)
 

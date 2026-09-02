@@ -1,7 +1,7 @@
 -- ui/widgets/tile.lua
--- Tile — a big icon-over-label action button (Home "Add Recipe" / "Add Custom
--- Drink", method pickers). Built on Card so tap behaviour and styling stay in one
--- place.
+-- Tile — a Card whose content is a centred icon over a short label. Used by method
+-- pickers, Home actions and the Index chooser. Built on Card so tap behaviour and
+-- styling stay in one place.
 --
 --   Tile:new{ width = w, height = h, icon = "add", label = _("Add Recipe"),
 --             on_tap = fn, show_parent = screen }
@@ -23,6 +23,7 @@ local Tile = {}
 function Tile:new(o)
   o = o or {}
   local icon_size = o.icon_size or Screen:scaleBySize(28)
+  local inner_w = (o.width or 0) - 2 * Design.pad.card
   local inner = VerticalGroup:new {
     align = "center",
     IconWidget:new {
@@ -32,17 +33,17 @@ function Tile:new(o)
       is_icon = true,
       alpha = true,
     },
-    VerticalSpan:new { width = Design.pad.sm },
+    VerticalSpan:new { width = Design.gap_tight },
     TextWidget:new {
       text = o.label or "",
       face = Design.face("body"),
-      max_width = (o.width or 0) - 2 * Design.pad.md,
+      max_width = inner_w,
     },
   }
   local body = CenterContainer:new {
     dimen = Geom:new {
-      w = (o.width or 0) - 2 * Design.pad.md,
-      h = (o.height or 0) - 2 * Design.pad.md,
+      w = inner_w,
+      h = (o.height or 0) - 2 * Design.pad.card,
     },
     inner,
   }

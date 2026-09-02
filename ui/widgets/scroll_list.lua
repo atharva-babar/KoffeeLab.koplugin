@@ -16,20 +16,23 @@
 -- UIManager clips inner repaints. `:setItems()` rebuilds + repaints once;
 -- `:rows()` returns the raw items array for specs.
 
+local Card = require("ui/widgets/card")
 local Design = require("ui/design")
-local Device = require("device")
 local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
-local GestureRange = require("ui/gesturerange")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
+local IconWidget = require("ui/widget/iconwidget")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local LineWidget = require("ui/widget/linewidget")
+local Paths = require("ui/paths")
 local ScrollableContainer = require("ui/widget/container/scrollablecontainer")
 local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
+local VerticalSpan = require("ui/widget/verticalspan")
+local Device = require("device")
+local Screen = Device.screen
 
 local ScrollList = InputContainer:extend {
   width = nil,
@@ -47,24 +50,33 @@ function ScrollList:init()
   self:_build()
 end
 
-local function hairline(w)
-  return LineWidget:new {
-    dimen = Geom:new { w = w, h = Design.border },
-    background = Design.color.hairline,
-  }
-end
-
--- One tappable normal row: LABEL ................ value, with a bottom hairline.
+-- One list row as a grey card: [icon] title .......... value, with `gap` below it
+-- instead of a hairline. `item.icon` (a bundled slug) is optional.
 function ScrollList:_normalRow(item)
-  local inner_w = self._content_w - 2 * self._pad
-  local gap = Design.pad.md
+  local card_w = self._content_w
+  local inner_w = card_w - 2 * Design.pad.card
+  local gap = Design.gap
+
+  local icon, icon_w = nil, 0
+  if item.icon then
+    local sz = Screen:scaleBySize(22)
+    icon = IconWidget:new {
+      file = Paths.icon(item.icon),
+      width = sz,
+      height = sz,
+      is_icon = true,
+      alpha = true,
+    }
+    icon_w = sz + Design.gap_tight
+  end
+
   local right, right_w = nil, 0
   if item.mandatory and item.mandatory ~= "" then
     right = TextWidget:new {
       text = tostring(item.mandatory),
       face = Design.face("label"),
       fgcolor = Design.color.muted,
-      max_width = math.floor(inner_w * 0.55),
+      max_width = math.floor(inner_w * 0.5),
       truncate_left = true,
     }
     right_w = right:getSize().w
@@ -72,45 +84,30 @@ function ScrollList:_normalRow(item)
   local left = TextWidget:new {
     text = tostring(item.text or ""),
     face = Design.face("body"),
-    max_width = inner_w - right_w - (right_w > 0 and gap or 0),
+    max_width = inner_w - icon_w - right_w - (right_w > 0 and gap or 0),
   }
 
-  local content = HorizontalGroup:new { align = "center", left }
+  local content = HorizontalGroup:new { align = "center" }
+  if icon then
+    content[#content + 1] = icon
+    content[#content + 1] = HorizontalSpan:new { width = Design.gap_tight }
+  end
+  content[#content + 1] = left
   if right then
-    content[#content + 1] =
-      HorizontalSpan:new { width = math.max(gap, inner_w - left:getSize().w - right_w) }
+    content[#content + 1] = HorizontalSpan:new {
+      width = math.max(gap, inner_w - icon_w - left:getSize().w - right_w),
+    }
     content[#content + 1] = right
   end
 
-  local frame = FrameContainer:new {
-    bordersize = 0,
-    padding = self._pad,
-    margin = 0,
-    width = self._content_w,
-    background = Design.color.bg,
+  local card = Card:new {
+    width = card_w,
+    show_parent = self.show_parent or self,
+    on_tap = item.on_tap,
     content,
   }
 
-  local row = frame
-  if item.on_tap and Device:isTouchDevice() then
-    row = InputContainer:new {}
-    row[1] = frame
-    row.ges_events.Tap = {
-      GestureRange:new {
-        ges = "tap",
-        range = function()
-          return frame.dimen
-        end,
-      },
-    }
-    row.onTap = function()
-      UIManager:setDirty(self.show_parent or self, "ui")
-      item.on_tap()
-      return true
-    end
-  end
-
-  return VerticalGroup:new { align = "left", row, hairline(self._content_w) }
+  return VerticalGroup:new { align = "left", card, VerticalSpan:new { width = Design.gap } }
 end
 
 function ScrollList:_headRow(item)
