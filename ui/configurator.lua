@@ -1,8 +1,7 @@
 -- ui/configurator.lua
 -- The Configurator category list (TECH_SOLUTION §2.19): the entities recipes and
--- drinks depend on. Each row pushes its own management screen through Nav;
--- Backup & Restore is still a placeholder until Phase 9. Hardware / gesture Back
--- and the titlebar chevron route to `Nav:pop()`.
+-- drinks depend on. Each row pushes its own management screen through Nav.
+-- Hardware / gesture Back and the titlebar chevron route to `Nav:pop()`.
 
 local Menu = require("ui/widget/menu")
 local Placeholder = require("ui/placeholder")
@@ -28,7 +27,7 @@ local CATEGORIES = {
   { title = _("Ingredients"), module = "ui/config/ingredients" },
   { title = _("Flavor Tags"), module = "ui/config/flavor_tags" },
   { title = _("Brew Methods"), module = "ui/config/methods" },
-  { title = _("Backup & Restore"), placeholder = _("Backup & restore UI arrives in Phase 9.") },
+  { title = _("Backup & Restore"), module = "ui/backup" },
 }
 
 function Configurator:init()

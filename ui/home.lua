@@ -11,7 +11,6 @@ local CenterContainer = require("ui/widget/container/centercontainer")
 local Geom = require("ui/geometry")
 local InfoMessage = require("ui/widget/infomessage")
 local Nav = require("ui/nav")
-local Placeholder = require("ui/placeholder")
 local ScreenBase = require("ui/screen_base")
 local UIManager = require("ui/uimanager")
 local Version = require("version")
@@ -23,10 +22,6 @@ local HomeScreen = ScreenBase:extend {
   no_back_button = false, -- Back from Home closes the plugin (stack empties)
   right_icon = "appbar.menu",
 }
-
-function HomeScreen:_open(title, message)
-  Nav:push(Placeholder:new { title = title, message = message })
-end
 
 function HomeScreen:getContentWidget()
   local width = math.floor(self.screen_w * 0.9)
@@ -85,7 +80,7 @@ function HomeScreen:onRightButton()
           text = _("Backup"),
           callback = function()
             UIManager:close(dialog)
-            self:_open(_("Backup"), _("Backup & restore UI arrives in Phase 9."))
+            Nav:push(require("ui/backup"):new {})
           end,
         },
       },
@@ -94,7 +89,7 @@ function HomeScreen:onRightButton()
           text = _("Restore"),
           callback = function()
             UIManager:close(dialog)
-            self:_open(_("Restore"), _("Backup & restore UI arrives in Phase 9."))
+            Nav:push(require("ui/backup"):new {})
           end,
         },
       },
