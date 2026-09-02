@@ -1,39 +1,69 @@
 -- services/home_service.lua
--- The four Home-screen stat cards. Each returns a plain index row (title,
--- method_name, overall_rating, avg_session_rating, brew_count, id) or nil when
--- there is nothing to show.
+-- The four Home-screen stat cards. Each `*_list(n)` returns up to n plain index
+-- rows (title, method_name, overall_rating, avg_session_rating, brew_count, id);
+-- the singular helpers return the first row (or nil / a count) for callers that
+-- only want the headline.
 
 local Search = require("services/search_service")
 
 local HomeService = {}
 
-local function first_row(opts)
-  local _, rows = Search.recipes(opts)
-  return rows and rows[1]
+local function rows(opts)
+  local _, r = Search.recipes(opts)
+  return r or {}
 end
 
---- Most recently brewed recipe, or nil when nothing has been brewed.
+local function brewed_only(list)
+  local out = {}
+  for _, r in ipairs(list) do
+    if tonumber(r.brew_count or 0) > 0 then
+      out[#out + 1] = r
+    end
+  end
+  return out
+end
+
+--- Most recently brewed recipes, newest first.
+function HomeService.recent_list(n)
+  return brewed_only(rows { sort = "recent", limit = n })
+end
+
+--- Recipes with the highest brew counts.
+function HomeService.most_brewed_list(n)
+  return brewed_only(rows { sort = "brew_count", limit = n })
+end
+
+--- Highest-rated recipes (catalogue rating, else session average).
+function HomeService.top_rated_list(n)
+  local out = {}
+  for _, r in ipairs(rows { sort = "rating", limit = n }) do
+    if r.overall_rating or r.avg_session_rating then
+      out[#out + 1] = r
+    end
+  end
+  return out
+end
+
+--- Recipes flagged as favourites.
+function HomeService.favourites_list(n)
+  return rows { favorite = true, sort = "rating", limit = n }
+end
+
 function HomeService.recent()
-  local r = first_row { sort = "recent", limit = 1 }
-  return (r and tonumber(r.brew_count or 0) > 0) and r or nil
+  return HomeService.recent_list(1)[1]
 end
 
---- Recipe with the highest brew count, or nil.
 function HomeService.most_brewed()
-  local r = first_row { sort = "brew_count", limit = 1 }
-  return (r and tonumber(r.brew_count or 0) > 0) and r or nil
+  return HomeService.most_brewed_list(1)[1]
 end
 
---- Highest-rated recipe (catalogue rating, else session average), or nil.
 function HomeService.top_rated()
-  local r = first_row { sort = "rating", limit = 1 }
-  return (r and (r.overall_rating or r.avg_session_rating)) and r or nil
+  return HomeService.top_rated_list(1)[1]
 end
 
 --- How many recipes are flagged as favourites.
 function HomeService.favourites_count()
-  local _, rows = Search.recipes { favorite = true }
-  return rows and #rows or 0
+  return #rows { favorite = true }
 end
 
 return HomeService

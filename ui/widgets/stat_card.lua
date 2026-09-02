@@ -69,7 +69,8 @@ end
 
 function StatCard:init()
   self.items = self.items or {}
-  self.lines = {}
+  self.lines = {} -- the tappable line widgets, in order
+  self.shown = {} -- the item tables actually rendered (<= MAX_ITEMS)
 
   local body = VerticalGroup:new { align = "left" }
   local header_tap = (#self.items > 0) and self.on_header or nil
@@ -86,6 +87,7 @@ function StatCard:init()
       body[#body + 1] = VerticalSpan:new { width = Design.gap_tight }
       local line = self:_line(item.text, Design.face("body"), Design.color.fg, item.on_tap)
       self.lines[#self.lines + 1] = line
+      self.shown[#self.shown + 1] = item
       body[#body + 1] = line
     end
   end

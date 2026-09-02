@@ -247,13 +247,11 @@ describe("ui/widgets", function()
     UIManager:close(d)
   end)
 
-  it("Home screen builds and its overflow menu opens", function()
+  it("Home screen builds and paints", function()
     local HomeScreen = require("ui/home")
     local home = HomeScreen:new {}
     assert.is_not_nil(home.title_bar)
-    home:paintTo(Screen.bb, 0, 0) -- full render path: frame + titlebar + button table
-    home:onRightButton()
-    -- close whatever the overflow opened
-    UIManager:close(UIManager._window_stack[#UIManager._window_stack].widget)
+    assert.are.equal(4, #home.cards)
+    home:paintTo(Screen.bb, 0, 0) -- full render path: frame + titlebar + navbar + cards
   end)
 end)
