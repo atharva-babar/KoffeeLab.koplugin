@@ -50,8 +50,9 @@ function ScrollList:init()
   self:_build()
 end
 
--- One list row as a grey card: [icon] title .......... value, with `gap` below it
--- instead of a hairline. `item.icon` (a bundled slug) is optional.
+-- One list row as a grey card: [icon] title .......... value, with an optional
+-- muted `item.caption` line under the title and `gap` below the card instead of a
+-- hairline. `item.icon` (a bundled slug) is optional.
 function ScrollList:_normalRow(item)
   local card_w = self._content_w
   local inner_w = card_w - 2 * Design.pad.card
@@ -59,7 +60,7 @@ function ScrollList:_normalRow(item)
 
   local icon, icon_w = nil, 0
   if item.icon then
-    local sz = Screen:scaleBySize(22)
+    local sz = Screen:scaleBySize(24)
     icon = IconWidget:new {
       file = Paths.icon(item.icon),
       width = sz,
@@ -67,7 +68,7 @@ function ScrollList:_normalRow(item)
       is_icon = true,
       alpha = true,
     }
-    icon_w = sz + Design.gap_tight
+    icon_w = sz + Design.gap
   end
 
   local right, right_w = nil, 0
@@ -81,21 +82,37 @@ function ScrollList:_normalRow(item)
     }
     right_w = right:getSize().w
   end
-  local left = TextWidget:new {
+
+  local text_w = inner_w - icon_w - right_w - (right_w > 0 and gap or 0)
+  local title = TextWidget:new {
     text = tostring(item.text or ""),
     face = Design.face("body"),
-    max_width = inner_w - icon_w - right_w - (right_w > 0 and gap or 0),
+    max_width = text_w,
   }
+  local left = title
+  if item.caption and item.caption ~= "" then
+    left = VerticalGroup:new {
+      align = "left",
+      title,
+      VerticalSpan:new { width = Design.gap_tight },
+      TextWidget:new {
+        text = tostring(item.caption),
+        face = Design.face("label"),
+        fgcolor = Design.color.muted,
+        max_width = text_w,
+      },
+    }
+  end
 
   local content = HorizontalGroup:new { align = "center" }
   if icon then
     content[#content + 1] = icon
-    content[#content + 1] = HorizontalSpan:new { width = Design.gap_tight }
+    content[#content + 1] = HorizontalSpan:new { width = Design.gap }
   end
   content[#content + 1] = left
   if right then
     content[#content + 1] = HorizontalSpan:new {
-      width = math.max(gap, inner_w - icon_w - left:getSize().w - right_w),
+      width = math.max(gap, text_w - left:getSize().w),
     }
     content[#content + 1] = right
   end

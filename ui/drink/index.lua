@@ -1,9 +1,11 @@
 -- ui/drink/index.lua
--- Custom-drink index (TECH_SOLUTION §2.14). A scrolling list: three control rows
--- (temperature filter, ingredient filter, sort) followed by the result rows
--- rendering `base recipe · <rating> · Hot/Cold`. Tapping a result opens
--- ui/drink/detail. Data through drink_service / search_service.
+-- Custom-drink index (TECH_SOLUTION §2.14; design-language §4.3). A scrolling
+-- column of drink cards: tumbler icon + title, base recipe as a caption, rating +
+-- Hot/Cold on the right. Filter (temperature / ingredient), Sort and Search are
+-- navbar actions that open modal pickers. Tapping a card opens ui/drink/detail.
+-- Data through drink_service / search_service.
 
+local ButtonDialog = require("ui/widget/buttondialog")
 local Constants = require("util/constants")
 local ConfigService = require("services/config_service")
 local Format = require("util/format")
@@ -11,6 +13,8 @@ local ListPicker = require("ui/widgets/list_picker")
 local Nav = require("ui/nav")
 local ScreenList = require("ui/screen_list")
 local SearchService = require("services/search_service")
+local TextInput = require("ui/widgets/text_input")
+local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local SORT_ORDER = { "updated", "rating", "title" }
@@ -23,36 +27,21 @@ local SORT_LABELS = {
 local DrinkIndex = ScreenList:extend {
   name = "koffeelab_drink_index",
   title = _("Custom Drinks"),
+  navbar = "list",
 }
 
 function DrinkIndex:init()
   self.temperature_mode = nil -- nil | "hot" | "cold"
   self.ingredient_id = nil
+  self.search = ""
   self.sort = "updated"
   local ok, ingredients = ConfigService.ingredients.list {}
   self.ingredients = ok and ingredients or {}
   ScreenList.init(self)
 end
 
-function DrinkIndex:_temp_label()
-  return self.temperature_mode and Constants.TEMPERATURE_MODE_LABELS[self.temperature_mode]
-    or _("All")
-end
-
-function DrinkIndex:_ingredient_label()
-  if self.ingredient_id == nil then
-    return _("All")
-  end
-  for _idx, ing in ipairs(self.ingredients) do -- luacheck: ignore _idx
-    if ing.id == self.ingredient_id then
-      return ing.name
-    end
-  end
-  return _("All")
-end
-
-local function row_note(d)
-  local parts = { d.base_recipe_title or _("?") }
+local function row_value(d)
+  local parts = {}
   local rating = tonumber(d.rating)
   if rating then
     parts[#parts + 1] = Format.rating_stars(rating)
@@ -62,44 +51,23 @@ local function row_note(d)
 end
 
 function DrinkIndex:buildItems()
-  local items = {
-    {
-      text = _("Temperature:  ") .. self:_temp_label(),
-      mandatory = "\u{203A}",
-      _ctl = "temperature",
-      callback = function()
-        self:_pickTemperature()
-      end,
-    },
-    {
-      text = _("Ingredient:  ") .. self:_ingredient_label(),
-      mandatory = "\u{203A}",
-      _ctl = "ingredient",
-      callback = function()
-        self:_pickIngredient()
-      end,
-    },
-    {
-      text = _("Sort:  ") .. SORT_LABELS[self.sort],
-      mandatory = "\u{203A}",
-      _ctl = "sort",
-      callback = function()
-        self:_pickSort()
-      end,
-    },
-  }
-
   local ok, rows = SearchService.drinks {
     temperature_mode = self.temperature_mode,
     ingredient_id = self.ingredient_id,
+    search = self.search,
     sort = self.sort,
   }
   rows = ok and rows or {}
-  items[#items + 1] = { text = _("Drinks"), mandatory = tostring(#rows), kind = "head" }
+
+  local items = {
+    { text = _("Drinks"), mandatory = tostring(#rows), kind = "head" },
+  }
   if #rows == 0 then
-    local unfiltered = self.temperature_mode == nil and self.ingredient_id == nil
+    local unfiltered = self.temperature_mode == nil
+      and self.ingredient_id == nil
+      and self.search == ""
     items[#items + 1] = {
-      text = unfiltered and _("No custom drinks yet. Add one from the Home screen.")
+      text = unfiltered and _("No custom drinks yet. Add one from the navbar.")
         or _("No drinks match this filter."),
       kind = "text",
     }
@@ -107,7 +75,9 @@ function DrinkIndex:buildItems()
   for _idx, d in ipairs(rows) do -- luacheck: ignore _idx
     items[#items + 1] = {
       text = d.title,
-      mandatory = row_note(d),
+      caption = d.base_recipe_title or _("?"),
+      icon = "custom_drink",
+      mandatory = row_value(d),
       _drink_id = d.id,
       callback = function()
         Nav:push(require("ui/drink/detail"):new {
@@ -124,8 +94,61 @@ end
 
 DrinkIndex._refresh = ScreenList.refresh
 
+--- Navbar verbs (design-language §3.7 `list` preset). Returns the opened modal.
+function DrinkIndex:onNavAction(key)
+  if key == "filter" then
+    return self:_pickFilter()
+  elseif key == "sort" then
+    return self:_pickSort()
+  elseif key == "search" then
+    return self:_editSearch()
+  end
+end
+
+-- Drinks have two filter axes; offer the choice, then the matching picker.
+function DrinkIndex:_pickFilter()
+  local dialog
+  dialog = ButtonDialog:new {
+    title = _("Filter drinks"),
+    title_align = "center",
+    buttons = {
+      {
+        {
+          text = _("By temperature"),
+          callback = function()
+            UIManager:close(dialog)
+            self:_pickTemperature()
+          end,
+        },
+      },
+      {
+        {
+          text = _("By ingredient"),
+          callback = function()
+            UIManager:close(dialog)
+            self:_pickIngredient()
+          end,
+        },
+      },
+    },
+  }
+  UIManager:show(dialog)
+  return dialog
+end
+
+function DrinkIndex:_editSearch()
+  return TextInput.show {
+    title = _("Search drinks by title"),
+    value = self.search,
+    on_ok = function(text)
+      self.search = text or ""
+      self:refresh()
+    end,
+  }
+end
+
 function DrinkIndex:_pickTemperature()
-  ListPicker.show {
+  return ListPicker.show {
     title = _("Filter by temperature"),
     items = {
       { text = _("All"), value = false },
@@ -145,7 +168,7 @@ function DrinkIndex:_pickIngredient()
   for _idx, ing in ipairs(self.ingredients) do -- luacheck: ignore _idx
     items[#items + 1] = { text = ing.name, value = ing.id }
   end
-  ListPicker.show {
+  return ListPicker.show {
     title = _("Filter by ingredient"),
     items = items,
     current = self.ingredient_id or false,
@@ -161,7 +184,7 @@ function DrinkIndex:_pickSort()
   for _idx, key in ipairs(SORT_ORDER) do -- luacheck: ignore _idx
     items[#items + 1] = { text = SORT_LABELS[key], value = key }
   end
-  ListPicker.show {
+  return ListPicker.show {
     title = _("Sort drinks by"),
     items = items,
     current = self.sort,

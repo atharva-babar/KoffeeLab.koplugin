@@ -1,12 +1,14 @@
 -- ui/recipe/index.lua
--- Base-recipe index (TECH_SOLUTION §1.21, §2.14). A scrolling list: three control
--- rows at the top (method filter, title search, sort) followed by the result
--- rows, each rendering `method · <rating> · N brews`. Tapping a result opens
--- ui/recipe/detail. All data comes through search_service. `favourites = true`
--- narrows to starred recipes (the navbar Favourites tab).
+-- Base-recipe index (TECH_SOLUTION §1.21, §2.14; design-language §4.3). A scrolling
+-- column of recipe cards: method icon + title, method name as a caption, rating +
+-- brew count on the right. Filter / Sort / Search are navbar actions that open
+-- modal pickers — there are no control rows. Tapping a card opens ui/recipe/detail.
+-- All data comes through search_service. `favourites = true` narrows to starred
+-- recipes.
 
 local Format = require("util/format")
 local ListPicker = require("ui/widgets/list_picker")
+local Methods = require("methods/init")
 local MethodService = require("services/method_service")
 local Nav = require("ui/nav")
 local ScreenList = require("ui/screen_list")
@@ -25,6 +27,7 @@ local SORT_LABELS = {
 local RecipeIndex = ScreenList:extend {
   name = "koffeelab_recipe_index",
   title = _("Base Coffee Recipes"),
+  navbar = "list",
 }
 
 function RecipeIndex:init()
@@ -39,20 +42,9 @@ function RecipeIndex:init()
   ScreenList.init(self)
 end
 
-function RecipeIndex:_method_label()
-  if self.method_slug == nil then
-    return _("All")
-  end
-  for _, m in ipairs(self.methods) do
-    if m.slug == self.method_slug then
-      return m.name
-    end
-  end
-  return _("All")
-end
-
-local function row_note(r)
-  local parts = { r.method_name or _("?") }
+-- Right-hand value: rating (session average, else overall stars) + brew count.
+local function row_value(r)
+  local parts = {}
   local avg = tonumber(r.avg_session_rating)
   local overall = tonumber(r.overall_rating)
   if avg then
@@ -66,33 +58,6 @@ local function row_note(r)
 end
 
 function RecipeIndex:buildItems()
-  local items = {
-    {
-      text = _("Method:  ") .. self:_method_label(),
-      mandatory = "\u{203A}",
-      _ctl = "method",
-      callback = function()
-        self:_pickMethod()
-      end,
-    },
-    {
-      text = _("Search:  ") .. (self.search ~= "" and self.search or _("(all)")),
-      mandatory = "\u{203A}",
-      _ctl = "search",
-      callback = function()
-        self:_editSearch()
-      end,
-    },
-    {
-      text = _("Sort:  ") .. SORT_LABELS[self.sort],
-      mandatory = "\u{203A}",
-      _ctl = "sort",
-      callback = function()
-        self:_pickSort()
-      end,
-    },
-  }
-
   local ok, rows = SearchService.recipes {
     method_slug = self.method_slug,
     search = self.search,
@@ -100,23 +65,29 @@ function RecipeIndex:buildItems()
     favorite = self.favourites or nil,
   }
   rows = ok and rows or {}
-  items[#items + 1] = { text = _("Recipes"), mandatory = tostring(#rows), kind = "head" }
+
+  local items = {
+    { text = _("Recipes"), mandatory = tostring(#rows), kind = "head" },
+  }
   if #rows == 0 then
     local unfiltered = self.method_slug == nil and self.search == ""
     local msg
     if self.favourites then
       msg = _("No favourite recipes yet. Star a recipe from its detail screen.")
     elseif unfiltered then
-      msg = _("No recipes yet. Add one from the Home screen.")
+      msg = _("No recipes yet. Add one from the navbar.")
     else
       msg = _("No recipes match this filter.")
     end
     items[#items + 1] = { text = msg, kind = "text" }
   end
   for _idx, r in ipairs(rows) do -- luacheck: ignore _idx
+    local method = Methods.get(r.method_slug)
     items[#items + 1] = {
       text = r.title,
-      mandatory = row_note(r),
+      caption = r.method_name or (method and method.name) or _("?"),
+      icon = method and method.icon or nil,
+      mandatory = row_value(r),
       _recipe_id = r.id,
       callback = function()
         Nav:push(require("ui/recipe/detail"):new {
@@ -133,12 +104,23 @@ end
 
 RecipeIndex._refresh = ScreenList.refresh
 
+--- Navbar verbs (design-language §3.7 `list` preset). Returns the opened modal.
+function RecipeIndex:onNavAction(key)
+  if key == "filter" then
+    return self:_pickMethod()
+  elseif key == "sort" then
+    return self:_pickSort()
+  elseif key == "search" then
+    return self:_editSearch()
+  end
+end
+
 function RecipeIndex:_pickMethod()
   local items = { { text = _("All methods"), value = false } }
   for _, m in ipairs(self.methods) do
     items[#items + 1] = { text = m.name, value = m.slug }
   end
-  ListPicker.show {
+  return ListPicker.show {
     title = _("Filter by method"),
     items = items,
     current = self.method_slug or false,
@@ -150,7 +132,7 @@ function RecipeIndex:_pickMethod()
 end
 
 function RecipeIndex:_editSearch()
-  TextInput.show {
+  return TextInput.show {
     title = _("Search recipes by title"),
     value = self.search,
     on_ok = function(text)
@@ -165,7 +147,7 @@ function RecipeIndex:_pickSort()
   for _idx, key in ipairs(SORT_ORDER) do -- luacheck: ignore _idx
     items[#items + 1] = { text = SORT_LABELS[key], value = key }
   end
-  ListPicker.show {
+  return ListPicker.show {
     title = _("Sort recipes by"),
     items = items,
     current = self.sort,

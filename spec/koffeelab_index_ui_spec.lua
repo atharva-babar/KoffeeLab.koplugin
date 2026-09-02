@@ -64,16 +64,16 @@ describe("ui index / search (Phase 6)", function()
     helper.teardown()
   end)
 
-  it("Index root lists the two sections and opens each", function()
+  it("Index root shows two tiles and opens each", function()
     local root = Nav:push(IndexRoot:new {})
-    assert.are.equal(2, #root.item_table)
+    assert.are.equal(2, #root.tiles)
     root:paintTo(Screen.bb, 0, 0)
 
-    root:onMenuChoice(root.item_table[1])
+    root.tiles[1].on_tap()
     assert.are.equal("koffeelab_recipe_index", Nav:top().name)
     Nav:pop()
 
-    root:onMenuChoice(root.item_table[2])
+    root.tiles[2].on_tap()
     assert.are.equal("koffeelab_drink_index", Nav:top().name)
   end)
 
@@ -141,6 +141,46 @@ describe("ui index / search (Phase 6)", function()
       assert.are.equal(0, #result_titles(screen, "_recipe_id"))
       screen:paintTo(Screen.bb, 0, 0)
     end)
+
+    it("has no control rows; result rows are method-icon cards", function()
+      make_recipe("pour_over", ids)
+      local screen = Nav:push(RecipeIndex:new {})
+      for _, item in ipairs(screen.item_table) do
+        assert.is_nil(item._ctl)
+      end
+      for _, item in ipairs(screen.item_table) do
+        if item._recipe_id then
+          assert.are.equal("pour_over", item.icon)
+          assert.are.equal("Pour Over", item.caption)
+        end
+      end
+    end)
+
+    it("navbar filter / sort actions mutate the list and refresh", function()
+      make_recipe("pour_over", ids)
+      make_recipe("espresso", ids)
+      local screen = Nav:push(RecipeIndex:new {})
+
+      local function pick(picker, value)
+        for i, it in ipairs(picker.item_table) do
+          if it._value == value then
+            picker:onMenuChoice(picker.item_table[i])
+            return
+          end
+        end
+        error("no option " .. tostring(value))
+      end
+
+      pick(screen:_pickMethod(), "espresso")
+      assert.are.equal("espresso", screen.method_slug)
+      assert.are.same({ "Test espresso" }, result_titles(screen, "_recipe_id"))
+
+      pick(screen:_pickSort(), "title")
+      assert.are.equal("title", screen.sort)
+
+      local modal = screen:onNavAction("search") -- smoke: opens a modal without error
+      require("ui/uimanager"):close(modal)
+    end)
   end)
 
   describe("drink index", function()
@@ -207,6 +247,25 @@ describe("ui index / search (Phase 6)", function()
       assert.are.equal("koffeelab_drink_detail", Nav:top().name)
       Nav:top():paintTo(Screen.bb, 0, 0)
       assert.is_truthy(seeded)
+    end)
+
+    it("navbar filter (temperature) mutates the list; no control rows", function()
+      seed_drinks()
+      local screen = Nav:push(DrinkIndex:new {})
+      for _, item in ipairs(screen.item_table) do
+        assert.is_nil(item._ctl)
+      end
+
+      local picker = screen:_pickTemperature()
+      for i, it in ipairs(picker.item_table) do
+        if it._value == "cold" then
+          picker:onMenuChoice(picker.item_table[i])
+        end
+      end
+      assert.are.equal("cold", screen.temperature_mode)
+      assert.are.same({ "Iced Latte" }, result_titles(screen, "_drink_id"))
+
+      require("ui/uimanager"):close(screen:_pickFilter()) -- smoke: filter chooser opens
     end)
   end)
 

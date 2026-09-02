@@ -38,7 +38,13 @@ function ScreenList:_toRows(items)
     if it._head then
       kind = "head"
     end
-    local row = { text = it.text, mandatory = it.mandatory, kind = kind }
+    local row = {
+      text = it.text,
+      mandatory = it.mandatory,
+      caption = it.caption,
+      icon = it.icon,
+      kind = kind,
+    }
     if not kind and not it._inert and it.callback then
       row.on_tap = function()
         it.callback()
