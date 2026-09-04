@@ -19,9 +19,5 @@ luacov.report.out
 /koreader/
 
 # Local-only design/planning docs — kept on disk for reference, not part of the plugin
-/TECH_SOLUTION_KoffeeLab_KOReader.md
-/IMPLEMENTATION_PLAN.md
-/PROGRESS.md
-/docs/eink-audit.md
-/docs/acceptance-*.md
-/docs/*-plan.md
+/docs/*
+docs/design-language.md
