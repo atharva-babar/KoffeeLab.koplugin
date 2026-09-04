@@ -7,9 +7,9 @@
 
 local Format = require("util/format")
 local FormScreen = require("ui/widgets/form_screen")
-local GrindDial = require("ui/widgets/grind_dial")
 local InfoMessage = require("ui/widget/infomessage")
 local ListPicker = require("ui/widgets/list_picker")
+local NumberInput = require("ui/widgets/number_input")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
@@ -113,14 +113,17 @@ function GrindSelect.build(opts)
           UIManager:show(InfoMessage:new { text = _("Choose a grinder first.") })
           return
         end
-        GrindDial.show {
-          value = draft.recipe.grind_value or g.min_value or 0,
-          min = g.min_value,
-          max = g.max_value,
-          step = g.step_value or 1,
-          default = g.default_value or g.min_value,
+        local step = tonumber(g.step_value) or 1
+        NumberInput.show {
+          title = _("Grind setting"),
+          value = draft.recipe.grind_value or tonumber(g.default_value) or tonumber(g.min_value) or 0,
+          min = tonumber(g.min_value),
+          max = tonumber(g.max_value),
+          step = step,
+          hold_step = step * 5,
+          default_value = tonumber(g.default_value),
           unit = g.unit_name,
-          on_change = function(n)
+          on_ok = function(n)
             draft.recipe.grind_value = n
             form:refreshItems()
             notify()

@@ -156,10 +156,11 @@ stack to Home (§2.6 of the nav rules).
 ### 3.8 Pickers & inputs (unchanged in spirit)
 
 - selection → full-screen modal list (`ListPicker`) or a `Tile` grid (methods)
-- number → `SpinWidget` via `NumberInput` (has −/+, hold-to-jump, tap-to-type)
-- grind → `GrindDial` (segmented `ButtonProgressWidget`, −/+, ⌥ keyboard)
+- number (incl. grind setting, bounded by the grinder's min/max/step) →
+  `SpinWidget` via `NumberInput` — one control: −/+, hold-to-jump, tap-to-type
 - text / duration → existing modal widgets
 - Every field editor is a **popup over the card**, never an inline expansion.
+- One input type per value. No bespoke multi-mode widgets.
 
 ---
 
@@ -213,7 +214,7 @@ sensory). Drink pages: **Basics** (Title, Temperature, Base recipe, Amount) ·
 **Extras** (Ingredients, Steps, Rating, Comment).
 
 The leaf editors reached from a field card — one brew step, one ingredient, the
-sensory screen, the grind dial, Brew Again — stay on `ui/widgets/form_screen`
+sensory screen, Brew Again — stay on `ui/widgets/form_screen`
 (now card-styled rows via `scroll_list`); they are small modal-ish forms, not
 wizards.
 
@@ -243,7 +244,7 @@ timer. Navbar `home·back`.
 - titlebar chevron as the only Back → still there, but navbar `back` is primary
 - hairline under every row → whitespace + card edges
 
-Kept: `Nav` stack, `ListPicker`, `NumberInput`, `GrindDial`, `ConfirmDialog`,
+Kept: `Nav` stack, `ListPicker`, `NumberInput`, `ConfirmDialog`,
 `Rating`, `ui/widgets/form_screen` (leaf editors only), the services layer, the
 e-ink one-repaint rules.
 
