@@ -103,8 +103,17 @@ function StatCard:init()
     body,
   }
   self[1] = self.frame
-  self.dimen = self.frame:getSize()
+  -- FrameContainer:getSize() reports content size and ignores a forced
+  -- width/height; report the forced size so the grid lays the cards out at the
+  -- width they actually paint.
+  local fs = self.frame:getSize()
+  self.dimen = Geom:new { w = self.width or fs.w, h = self.height or fs.h }
   self.inert = #self.items == 0
+end
+
+function StatCard:paintTo(bb, x, y)
+  InputContainer.paintTo(self, bb, x, y)
+  self.dimen.x, self.dimen.y = x, y
 end
 
 function StatCard:getSize()

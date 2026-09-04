@@ -7,19 +7,19 @@
 
 local Design = require("ui/design")
 local Device = require("device")
-local Geom = require("ui/geometry")
 local HomeService = require("services/home_service")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local HorizontalSpan = require("ui/widget/horizontalspan")
 local Nav = require("ui/nav")
 local ScreenBase = require("ui/screen_base")
 local StatCard = require("ui/widgets/stat_card")
-local TopContainer = require("ui/widget/container/topcontainer")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local _ = require("gettext")
 local Screen = Device.screen
+
+local MAX_PAGE_W = 600
 
 local HomeScreen = ScreenBase:extend {
   name = "koffeelab_home",
@@ -35,10 +35,13 @@ local function safe(fn, ...)
 end
 
 function HomeScreen:getContentWidget()
-  self.content_wrap = TopContainer:new {
-    dimen = Geom:new { w = self.screen_w, h = self.content_height },
-    self:_buildBody(),
+  -- width-pinned + centred; a plain VerticalGroup so the ScrollableContainer sees
+  -- the real content height (a fixed-dimen wrapper would make it think it fits).
+  self.content_wrap = VerticalGroup:new {
+    align = "center",
+    HorizontalSpan:new { width = self.screen_w },
   }
+  self.content_wrap[2] = self:_buildBody()
   return self.content_wrap
 end
 
@@ -74,7 +77,8 @@ end
 function HomeScreen:_buildBody()
   local pad = Design.pad.page
   local gap = Design.gap
-  local avail = self.screen_w - 2 * pad
+  local page_w = math.min(self.screen_w, Screen:scaleBySize(MAX_PAGE_W))
+  local avail = page_w - 2 * pad
   local card_w = math.floor((avail - gap) / 2)
   local card_h = Screen:scaleBySize(112)
 
@@ -137,12 +141,10 @@ function HomeScreen:_buildBody()
   }
 
   return VerticalGroup:new {
-    align = "left",
+    align = "center",
     VerticalSpan:new { width = pad },
-    HorizontalGroup:new {
-      HorizontalSpan:new { width = pad },
-      grid,
-    },
+    grid,
+    VerticalSpan:new { width = pad },
   }
 end
 
@@ -151,7 +153,8 @@ function HomeScreen:_reload()
   if not self.content_wrap then
     return
   end
-  self.content_wrap[1] = self:_buildBody()
+  self.content_wrap[2] = self:_buildBody()
+  self.content_wrap:resetLayout()
   if self.scroll_container and self.scroll_container.reset then
     self.scroll_container:reset()
   end

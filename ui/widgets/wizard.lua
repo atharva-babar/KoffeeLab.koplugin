@@ -82,7 +82,7 @@ function Wizard:_syncTitle()
   local suffix = page and page.title and ("  \u{00B7}  " .. page.title) or ""
   self.title = (self.wizard_title or "") .. suffix
   if self.title_bar and self.title_bar.setTitle then
-    self.title_bar:setTitle(self.title)
+    self.title_bar:setTitle(self.title, true) -- our own refresh() repaints
   end
 end
 

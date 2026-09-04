@@ -15,7 +15,6 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local UIManager = require("ui/uimanager")
 
 local Card = InputContainer:extend {
   width = nil,
@@ -38,28 +37,36 @@ function Card:init()
     self[1],
   }
   self[1] = self.frame
-  self.dimen = self.frame:getSize()
+  -- FrameContainer:getSize() reports its *content* size and ignores a forced
+  -- width/height; report the forced size so a VerticalGroup lays this card out
+  -- (and centres it) at the width it actually paints.
+  local fs = self.frame:getSize()
+  self.dimen = Geom:new { w = self.width or fs.w, h = self.height or fs.h }
 
   if self.on_tap and Device:isTouchDevice() then
     self.ges_events.Tap = {
-      -- the frame's x/y are only known after paintTo, so match lazily
+      -- x/y are only known after paintTo, so match lazily against self.dimen
       GestureRange:new {
         ges = "tap",
         range = function()
-          return self.frame.dimen
+          return self.dimen
         end,
       },
     }
   end
 end
 
+function Card:paintTo(bb, x, y)
+  InputContainer.paintTo(self, bb, x, y)
+  self.dimen.x, self.dimen.y = x, y
+end
+
 function Card:onTap()
   if not self.on_tap then
     return true
   end
-  -- brief pressed flash; the caller's action then drives the real repaint
-  self.frame.background = Design.color.card_active
-  UIManager:setDirty(self.show_parent or self, "ui")
+  -- The action drives its own repaint (a pushed screen / modal / list rebuild);
+  -- a "pressed" flash would just stick grey on e-ink until the next full paint.
   self.on_tap()
   return true
 end
