@@ -35,7 +35,8 @@ local TagPicker = Menu:extend {
   with_bottom_line = true,
   title_bar_left_icon = "chevron.left",
   title = _("Flavor Tags"),
-  selected = nil, -- shared array of flavor_tag ids
+  chosen_ids = nil, -- shared array of flavor_tag ids (NOT `selected`: that name is
+  -- reserved by Menu/FocusManager for its focus cursor and gets clobbered)
   on_change = nil,
 }
 
@@ -46,7 +47,7 @@ end
 
 function TagPicker:_has(id)
   -- ids may arrive as SQLite int64 cdata or Lua numbers; compare numerically.
-  for _, tid in ipairs(self.selected) do
+  for _, tid in ipairs(self.chosen_ids) do
     if tonumber(tid) == tonumber(id) then
       return true
     end
@@ -93,7 +94,7 @@ function TagPicker:onMenuChoice(item)
           })
           return
         end
-        self.selected[#self.selected + 1] = tonumber(res.id)
+        self.chosen_ids[#self.chosen_ids + 1] = tonumber(res.id)
         self:_refresh()
       end,
     }
@@ -101,14 +102,14 @@ function TagPicker:onMenuChoice(item)
   end
   if item._id then
     if self:_has(item._id) then
-      for i, tid in ipairs(self.selected) do
+      for i, tid in ipairs(self.chosen_ids) do
         if tonumber(tid) == item._id then
-          table.remove(self.selected, i)
+          table.remove(self.chosen_ids, i)
           break
         end
       end
     else
-      self.selected[#self.selected + 1] = item._id
+      self.chosen_ids[#self.chosen_ids + 1] = item._id
     end
     self:_refresh()
   end
@@ -176,7 +177,7 @@ function Sensory.build(opts)
     end,
     edit = function(form)
       form.nav:push(TagPicker:new {
-        selected = draft.flavor_tag_ids,
+        chosen_ids = draft.flavor_tag_ids,
         on_change = function()
           form:refreshItems()
           notify()
