@@ -79,6 +79,7 @@ function RecipeDetail:_wrapped(text)
     text = tostring(text),
     face = Design.face("body"),
     width = self.card_w - 2 * Design.pad.card,
+    bgcolor = Design.color.card, -- sit on the card, not a white strip
   }
 end
 
@@ -112,6 +113,7 @@ function RecipeDetail:buildCards()
   end
   self.not_found = false
   local method = m.method or Methods.get(m.method_slug)
+  local tscale = method and method.time_scale
   local cards = {}
 
   -- Brew Details -------------------------------------------------------------
@@ -142,7 +144,7 @@ function RecipeDetail:buildCards()
     tile(_("Water"), table.concat(bits, " / "))
   end
   if m.brew_time_sec ~= nil then
-    tile(_("Brew time"), Format.duration(m.brew_time_sec))
+    tile(_("Brew time"), Format.duration(m.brew_time_sec, tscale))
   end
   local ratio = Format.ratio(m.water_g, m.dose_g, m.output_weight_g)
   if m.output_weight_g ~= nil or ratio then
@@ -172,11 +174,11 @@ function RecipeDetail:buildCards()
     for i, step in ipairs(m.steps) do
       local note = {}
       if step.start_time then
-        note[#note + 1] = Format.duration(step.start_time)
+        note[#note + 1] = Format.duration(step.start_time, tscale)
       end
       local dur = Derive.duration(m.steps, i, m.brew_time_sec)
       if dur and dur > 0 then
-        note[#note + 1] = Format.duration(dur)
+        note[#note + 1] = Format.duration(dur, tscale)
       end
       if total_water[i] then
         note[#note + 1] = Format.grams(total_water[i])

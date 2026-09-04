@@ -116,7 +116,10 @@ function GrindSelect.build(opts)
         local step = tonumber(g.step_value) or 1
         NumberInput.show {
           title = _("Grind setting"),
-          value = draft.recipe.grind_value or tonumber(g.default_value) or tonumber(g.min_value) or 0,
+          value = draft.recipe.grind_value
+            or tonumber(g.default_value)
+            or tonumber(g.min_value)
+            or 0,
           min = tonumber(g.min_value),
           max = tonumber(g.max_value),
           step = step,

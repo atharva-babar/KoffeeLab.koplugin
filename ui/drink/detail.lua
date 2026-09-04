@@ -54,6 +54,7 @@ function DrinkDetail:_wrapped(text)
     text = tostring(text),
     face = Design.face("body"),
     width = self.card_w - 2 * Design.pad.card,
+    bgcolor = Design.color.card, -- sit on the card, not a white strip
   }
 end
 
