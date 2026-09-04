@@ -7,8 +7,9 @@
 
 local Constants = require("util/constants")
 local FormScreen = require("ui/widgets/form_screen")
+local InfoMessage = require("ui/widget/infomessage")
 local ListPicker = require("ui/widgets/list_picker")
-local Menu = require("ui/widget/menu")
+local ScreenList = require("ui/screen_list")
 local TextInput = require("ui/widgets/text_input")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
@@ -26,24 +27,17 @@ local RATING_ITEMS = {
 
 -- ── flavor-tag multi-select ───────────────────────────────────────────────────
 
-local TagPicker = Menu:extend {
+-- A scrolling list (no pagination) of every flavour tag; tap to toggle. Tags are
+-- written straight into the shared `chosen_ids` array as you toggle, so Save and
+-- Back do the same thing — Save is just the explicit "I'm done" affordance.
+-- `chosen_ids` is NOT called `selected`: Menu/FocusManager reserves that name.
+local TagPicker = ScreenList:extend {
   name = "koffeelab_recipe_tags",
-  covers_fullscreen = true,
-  is_borderless = true,
-  is_popout = false,
-  is_enable_shortcut = false,
-  with_bottom_line = true,
-  title_bar_left_icon = "chevron.left",
   title = _("Flavor Tags"),
-  chosen_ids = nil, -- shared array of flavor_tag ids (NOT `selected`: that name is
-  -- reserved by Menu/FocusManager for its focus cursor and gets clobbered)
+  navbar = { "save", "back" },
+  chosen_ids = nil, -- shared array of flavor_tag ids
   on_change = nil,
 }
-
-function TagPicker:init()
-  self.item_table = self:_items()
-  Menu.init(self)
-end
 
 function TagPicker:_has(id)
   -- ids may arrive as SQLite int64 cdata or Lua numbers; compare numerically.
@@ -55,78 +49,80 @@ function TagPicker:_has(id)
   return false
 end
 
-function TagPicker:_items()
+function TagPicker:buildItems()
   local ConfigService = require("services/config_service")
   local ok, tags = ConfigService.flavor_tags.list {}
   tags = ok and tags or {}
-  local items = { { text = "+ " .. _("Add Tag"), _add = true } }
+  local items = {
+    {
+      text = "+ " .. _("Add flavour tag"),
+      _add = true,
+      callback = function()
+        self:_addTag()
+      end,
+    },
+  }
   for _, tag in ipairs(tags) do
+    local id = tonumber(tag.id)
     items[#items + 1] = {
-      text = (self:_has(tag.id) and "\u{2713} " or "   ") .. tag.name,
-      _id = tonumber(tag.id),
+      text = tag.name,
+      mandatory = self:_has(id) and "\u{2713}" or nil,
+      _id = id,
+      callback = function()
+        self:_toggle(id)
+      end,
     }
   end
   return items
 end
 
-function TagPicker:_refresh()
+function TagPicker:_notify()
   if self.on_change then
     self.on_change()
   end
-  self:switchItemTable(nil, self:_items(), self.page or 1)
 end
 
-function TagPicker:onMenuChoice(item)
-  if item._add then
-    local ConfigService = require("services/config_service")
-    TextInput.show {
-      title = _("New flavor tag"),
-      hint = _("e.g. Citrus"),
-      on_ok = function(name)
-        if name == "" then
-          return
-        end
-        local ok, res = ConfigService.flavor_tags.create { name = name }
-        if not ok then
-          UIManager:show(require("ui/widget/infomessage"):new {
-            text = tostring(res),
-            icon = "notice-warning",
-          })
-          return
-        end
-        self.chosen_ids[#self.chosen_ids + 1] = tonumber(res.id)
-        self:_refresh()
-      end,
-    }
-    return true
-  end
-  if item._id then
-    if self:_has(item._id) then
-      for i, tid in ipairs(self.chosen_ids) do
-        if tonumber(tid) == item._id then
-          table.remove(self.chosen_ids, i)
-          break
-        end
+function TagPicker:_toggle(id)
+  if self:_has(id) then
+    for i, tid in ipairs(self.chosen_ids) do
+      if tonumber(tid) == id then
+        table.remove(self.chosen_ids, i)
+        break
       end
-    else
-      self.chosen_ids[#self.chosen_ids + 1] = item._id
     end
-    self:_refresh()
-  end
-  return true
-end
-
-function TagPicker:_back()
-  if self.nav then
-    self.nav:pop()
   else
-    UIManager:close(self)
+    self.chosen_ids[#self.chosen_ids + 1] = id
   end
-  return true
+  self:_notify()
+  self:refresh()
 end
 
-TagPicker.onClose = TagPicker._back
-TagPicker.onLeftButtonTap = TagPicker._back
+function TagPicker:_addTag()
+  local ConfigService = require("services/config_service")
+  TextInput.show {
+    title = _("New flavour tag"),
+    hint = _("e.g. Citrus"),
+    on_ok = function(name)
+      if name == "" then
+        return
+      end
+      local ok, res = ConfigService.flavor_tags.create { name = name }
+      if not ok then
+        UIManager:show(InfoMessage:new { text = tostring(res), icon = "notice-warning" })
+        return
+      end
+      self.chosen_ids[#self.chosen_ids + 1] = tonumber(res.id)
+      self:_notify()
+      self:refresh()
+    end,
+  }
+end
+
+function TagPicker:onNavAction(key)
+  if key == "save" then
+    self:_goBack()
+  end
+end
 
 -- ── the screen ────────────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 -- ui/widgets/number_input.lua
--- NumberInput — pick a REAL value within min/max/step (TECH_SOLUTION §1.5
--- grinder ranges, §2.6 grind entry). Wraps KOReader's SpinWidget, which is
--- already e-ink-safe (discrete +/- , one repaint per press) and renders an
--- optional unit label.
+-- NumberInput — enter a REAL value within min/max/step by typing it (TECH_SOLUTION
+-- §1.5 grinder ranges, §2.6 grind entry). A plain numeric text field (InputDialog
+-- with the number keyboard) — no +/- steppers. The entered value is parsed and
+-- clamped to [min, max]; the allowed range and unit are shown as the description.
 --
 --   NumberInput.show{
 --     title = _("Grind setting"),
@@ -13,42 +13,95 @@
 --     on_cancel = function() ... end,   -- optional
 --   }
 
-local SpinWidget = require("ui/widget/spinwidget")
+local InputDialog = require("ui/widget/inputdialog")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local NumberInput = {}
 
+local function clamp(v, lo, hi)
+  if lo and v < lo then
+    return lo
+  end
+  if hi and v > hi then
+    return hi
+  end
+  return v
+end
+
 function NumberInput.show(opts)
   assert(type(opts.on_ok) == "function", "NumberInput needs on_ok")
   local step = opts.step or 1
-  local is_fractional = opts.precision ~= nil or (step % 1 ~= 0)
+  local fractional = opts.precision ~= nil or (step % 1 ~= 0)
+  local fmt = opts.precision or (fractional and "%.1f" or "%d")
 
-  local spin
-  spin = SpinWidget:new {
-    title_text = opts.title or _("Enter a number"),
-    info_text = opts.info_text or _("Tap the number to type it"),
-    value = opts.value or opts.min or 0,
-    value_min = opts.min,
-    value_max = opts.max,
-    value_step = step,
-    value_hold_step = opts.hold_step or (step * 5),
-    precision = opts.precision or (is_fractional and "%.1f" or nil),
-    unit = opts.unit,
-    ok_text = opts.ok_text or _("Set"),
-    ok_always_enabled = true,
-    default_value = opts.default_value,
-    callback = function(spin_widget)
-      opts.on_ok(spin_widget.value)
-    end,
-    cancel_callback = function()
-      if opts.on_cancel then
-        opts.on_cancel()
-      end
-    end,
+  local function display(n)
+    if n == nil then
+      return ""
+    end
+    return fractional and string.format(fmt, n) or tostring(math.floor(n + 0.5))
+  end
+
+  -- description: the allowed range (+ unit), then any caller info line
+  local range
+  if opts.min ~= nil and opts.max ~= nil then
+    range = string.format("%s–%s", display(opts.min), display(opts.max))
+  elseif opts.min ~= nil then
+    range = string.format("≥ %s", display(opts.min))
+  elseif opts.max ~= nil then
+    range = string.format("≤ %s", display(opts.max))
+  end
+  if range and opts.unit and opts.unit ~= "" then
+    range = range .. " " .. opts.unit
+  end
+  local description = range
+  if opts.info_text and opts.info_text ~= "" then
+    description = range and (range .. "\n" .. opts.info_text) or opts.info_text
+  end
+
+  local dialog
+  dialog = InputDialog:new {
+    title = opts.title or _("Enter a number"),
+    description = description,
+    input = display(opts.value or opts.default_value or opts.min),
+    input_type = "number",
+    buttons = {
+      {
+        {
+          text = _("Cancel"),
+          id = "close",
+          callback = function()
+            UIManager:close(dialog)
+            if opts.on_cancel then
+              opts.on_cancel()
+            end
+          end,
+        },
+        {
+          text = opts.ok_text or _("Set"),
+          is_enter_default = true,
+          callback = function()
+            local n = tonumber(dialog:getInputText())
+            UIManager:close(dialog)
+            if n == nil then
+              if opts.on_cancel then
+                opts.on_cancel()
+              end
+              return
+            end
+            n = clamp(n, opts.min, opts.max)
+            if not fractional then
+              n = math.floor(n + 0.5)
+            end
+            opts.on_ok(n)
+          end,
+        },
+      },
+    },
   }
-  UIManager:show(spin)
-  return spin
+  UIManager:show(dialog)
+  dialog:onShowKeyboard()
+  return dialog
 end
 
 return NumberInput
