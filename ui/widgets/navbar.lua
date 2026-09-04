@@ -132,6 +132,9 @@ function Navbar:init()
   local bar_w = cell_w * n
   local left = math.floor((self.width - bar_w) / 2)
 
+  -- Build the row at the FULL width (leading + trailing spacer) so the enclosing
+  -- VerticalGroup's centre-align is a no-op and the painted cells line up exactly
+  -- with self._ranges (which the tap hit-test uses).
   local row = HorizontalGroup:new { align = "top" }
   if left > 0 then
     row[#row + 1] = HorizontalSpan:new { width = left }
@@ -145,6 +148,10 @@ function Navbar:init()
       x1 = left + cell_w * i,
     }
   end
+  local right = self.width - left - bar_w
+  if right > 0 then
+    row[#row + 1] = HorizontalSpan:new { width = right }
+  end
 
   self.frame = FrameContainer:new {
     background = Design.color.bg,
@@ -153,6 +160,7 @@ function Navbar:init()
     margin = 0,
     width = self.width,
     VerticalGroup:new {
+      align = "left",
       LineWidget:new {
         dimen = Geom:new { w = self.width, h = Design.border },
         background = Design.color.hairline,
