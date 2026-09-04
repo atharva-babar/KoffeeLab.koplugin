@@ -55,9 +55,9 @@ describe("ui/config (Configurator)", function()
 
     it("shows an empty state, then the bean after it is added", function()
       local list = Nav:push(Beans:new {})
-      -- row 1 is "+ Add Bean", row 2 the empty-state hint
-      assert.is_true(list.item_table[1].text:find("Add Bean", 1, true) ~= nil)
-      assert.are.equal(2, #list.item_table)
+      -- the Add verb is on the navbar; the only row is the empty-state hint
+      assert.are.equal(1, #list.item_table)
+      assert.is_true(list.item_table[1].text:find("No beans", 1, true) ~= nil)
 
       local form = EntityForm.build {
         nav = Nav,
@@ -89,14 +89,14 @@ describe("ui/config (Configurator)", function()
       assert.are.equal(1, #rows)
       assert.are.equal("Ethiopia Guji", rows[1].name)
 
-      assert.are.equal(2, #list.item_table) -- "+ Add" + the new bean, no empty hint
-      assert.are.equal("Ethiopia Guji", list.item_table[2].text)
+      assert.are.equal(1, #list.item_table) -- just the new bean, no empty hint
+      assert.are.equal("Ethiopia Guji", list.item_table[1].text)
     end)
 
     it("disable hides a bean from the default list but the Configurator still shows it", function()
       assert(ConfigService.beans.create { name = "Old Bean" })
       local list = Nav:push(Beans:new {})
-      local bean = list.item_table[2]._entity
+      local bean = list.item_table[1]._entity
 
       local form = EntityForm.build {
         nav = Nav,
@@ -123,8 +123,8 @@ describe("ui/config (Configurator)", function()
       assert.are.equal(1, #all)
 
       -- the Configurator list still renders it, flagged disabled
-      assert.are.equal(2, #list.item_table)
-      assert.is_true(list.item_table[2].mandatory:find("disabled", 1, true) ~= nil)
+      assert.are.equal(1, #list.item_table)
+      assert.is_true(list.item_table[1].mandatory:find("disabled", 1, true) ~= nil)
     end)
   end)
 
@@ -188,18 +188,18 @@ describe("ui/config (Configurator)", function()
       local list = Nav:push(Ingredients:new {})
       local depth = Nav:depth()
       stub_text("Oat milk")
-      list:on_add()
+      list:_navSelect("add") -- the navbar Add cell routes to on_add
       assert.are.equal(depth, Nav:depth()) -- no EntityForm pushed
       local _, rows = ConfigService.ingredients.list {}
       assert.are.equal(1, #rows)
       assert.are.equal("Oat milk", rows[1].name)
-      assert.are.equal("Oat milk", list.item_table[2].text)
+      assert.are.equal("Oat milk", list.item_table[1].text)
     end)
 
     it("renames a flavor tag inline", function()
       assert(ConfigService.flavor_tags.create { name = "Choco" })
       local list = Nav:push(FlavorTags:new {})
-      local entity = list.item_table[2]._entity
+      local entity = list.item_table[1]._entity
       stub_text("Chocolate")
       list:on_edit(entity)
       local _, rows = ConfigService.flavor_tags.list {}

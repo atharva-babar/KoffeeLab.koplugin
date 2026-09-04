@@ -66,7 +66,7 @@ describe("ui/home (redesign v2)", function()
 
   it("stat cards are inert with no data", function()
     local home = Nav:push(HomeScreen:new {})
-    for _, header in ipairs { "Recent", "Most Brewed", "Top Rated", "Favourites" } do
+    for _, header in ipairs { "Recently Saved", "Most Brewed", "Top Rated", "Favourites" } do
       local c = card_by_header(home, header)
       assert.is_true(c.inert, header .. " should be inert")
       assert.are.equal(0, #c.lines)
@@ -75,15 +75,15 @@ describe("ui/home (redesign v2)", function()
 
   it("stat cards list the seeded recipes after a reload", function()
     local a = make_recipe("pour_over", ids, { title = "Alpha", rating = 5 })
-    local b = make_recipe("espresso", ids, { title = "Bravo" })
-    assert(BrewService.record { recipe_id = b.id })
-    assert(BrewService.record { recipe_id = b.id })
     assert(RecipeService.set_favorite(a.id, true))
+    local b = make_recipe("espresso", ids, { title = "Bravo" }) -- saved last
+    assert(BrewService.record { recipe_id = b.id })
+    assert(BrewService.record { recipe_id = b.id })
 
     local home = Nav:push(HomeScreen:new {})
     home:_reload()
 
-    assert.are.equal("Bravo", card_by_header(home, "Recent").shown[1].text)
+    assert.are.equal("Bravo", card_by_header(home, "Recently Saved").shown[1].text)
     assert.are.equal("Bravo", card_by_header(home, "Most Brewed").shown[1].text)
     assert.are.equal("Alpha", card_by_header(home, "Top Rated").shown[1].text)
     assert.are.equal("Alpha", card_by_header(home, "Favourites").shown[1].text)
@@ -117,9 +117,18 @@ describe("ui/home (redesign v2)", function()
     assert.are.equal("koffeelab_configurator", Nav:top().name)
   end)
 
-  it("the add_recipe navbar key starts the recipe flow", function()
+  it("the navbar Add key opens the Recipe / Drink chooser", function()
+    local UIManager = require("ui/uimanager")
     local home = Nav:push(HomeScreen:new {})
-    home:_navSelect("add_recipe")
-    assert.is_truthy(Nav:top())
+    local depth = #UIManager._window_stack
+    home:_navSelect("add")
+    assert.are.equal(depth + 1, #UIManager._window_stack)
+    UIManager:close(UIManager._window_stack[#UIManager._window_stack].widget)
+  end)
+
+  it("the navbar Exit key tears the whole plugin stack down", function()
+    local home = Nav:push(HomeScreen:new {})
+    home:_navSelect("exit")
+    assert.are.equal(0, Nav:depth())
   end)
 end)

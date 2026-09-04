@@ -86,16 +86,19 @@ end
 
 local function brew_time_row(draft, method_spec)
   local label = method_spec.label or _("Brew time")
+  local scale = draft.method and draft.method.time_scale
   return {
     key = "brew_time_sec",
     label = label,
     display = function()
-      return draft.recipe.brew_time_sec and Format.duration(draft.recipe.brew_time_sec) or nil
+      return draft.recipe.brew_time_sec and Format.duration(draft.recipe.brew_time_sec, scale)
+        or nil
     end,
     edit = function(form)
       DurationInput.show {
         title = label,
         value_sec = draft.recipe.brew_time_sec,
+        scale = scale,
         on_ok = function(sec)
           draft.recipe.brew_time_sec = sec
           form:refreshItems()

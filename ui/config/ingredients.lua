@@ -11,7 +11,7 @@ return FlatScreen.define {
   title = _("Ingredients"),
   singular = _("Ingredient"),
   service = require("services/config_service").ingredients,
-  empty_text = _("No ingredients yet. Tap “+ Add Ingredient”."),
+  empty_text = _("No ingredients yet. Use the Add button below."),
   fields = {
     { key = "name", label = _("Name"), kind = "text", hint = _("e.g. Milk") },
   },

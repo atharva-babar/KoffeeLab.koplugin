@@ -3,8 +3,12 @@
 -- Tapping a line opens that item; tapping the header opens the full list. When
 -- there are no items the card shows one muted "Nothing yet" line and is inert.
 --
---   StatCard:new{ width = w, height = h, show_parent = screen,
---     header = _("Recent"), on_header = fn, empty_text = _("No brews yet"),
+-- The card always reserves MAX_ITEMS body rows (blank filler for missing ones)
+-- and sizes its height to that content, so every card in the Home grid is the
+-- same height and the rounded background always contains its text.
+--
+--   StatCard:new{ width = w, show_parent = screen,
+--     header = _("Recently Saved"), on_header = fn, empty_text = _("No recipes yet"),
 --     items = { { text = "V60 Morning", on_tap = fn }, ... } }  -- up to 3
 
 local Design = require("ui/design")
@@ -77,18 +81,26 @@ function StatCard:init()
   self.header_line = self:_line(self.header, Design.face("label"), Design.color.muted, header_tap)
   body[#body + 1] = self.header_line
 
-  if #self.items == 0 then
+  -- Always lay out MAX_ITEMS body rows so every card is the same height. Real
+  -- items are tappable; an empty card puts its "nothing yet" note on row 1; any
+  -- remaining rows are blank spacers that just hold the height.
+  for i = 1, MAX_ITEMS do
     body[#body + 1] = VerticalSpan:new { width = Design.gap_tight }
-    body[#body + 1] =
-      self:_line(self.empty_text or _("Nothing yet"), Design.face("body"), Design.color.muted, nil)
-  else
-    for i = 1, math.min(MAX_ITEMS, #self.items) do
-      local item = self.items[i]
-      body[#body + 1] = VerticalSpan:new { width = Design.gap_tight }
+    local item = self.items[i]
+    if item then
       local line = self:_line(item.text, Design.face("body"), Design.color.fg, item.on_tap)
       self.lines[#self.lines + 1] = line
       self.shown[#self.shown + 1] = item
       body[#body + 1] = line
+    elseif i == 1 and #self.items == 0 then
+      body[#body + 1] = self:_line(
+        self.empty_text or _("Nothing yet"),
+        Design.face("body"),
+        Design.color.muted,
+        nil
+      )
+    else
+      body[#body + 1] = self:_line(" ", Design.face("body"), Design.color.card, nil)
     end
   end
 
@@ -99,15 +111,15 @@ function StatCard:init()
     padding = Design.pad.card,
     margin = 0,
     width = self.width,
-    height = self.height,
     body,
   }
   self[1] = self.frame
-  -- FrameContainer:getSize() reports content size and ignores a forced
-  -- width/height; report the forced size so the grid lays the cards out at the
-  -- width they actually paint.
+  -- FrameContainer:getSize() reports content size and ignores a forced width;
+  -- report the forced width (with the measured content height) so the grid lays
+  -- the cards out at the size they actually paint.
   local fs = self.frame:getSize()
-  self.dimen = Geom:new { w = self.width or fs.w, h = self.height or fs.h }
+  self.height = fs.h
+  self.dimen = Geom:new { w = self.width or fs.w, h = fs.h }
   self.inert = #self.items == 0
 end
 

@@ -15,18 +15,19 @@ local ScreenList = require("ui/screen_list")
 local TextInput = require("ui/widgets/text_input")
 local _ = require("gettext")
 
-local function field_row(key)
+local function field_row(key, scale)
   if key == "start_time" then
     return {
       key = "start_time",
       label = _("Start time"),
       display = function(v)
-        return v.start_time and Format.duration(v.start_time) or nil
+        return v.start_time and Format.duration(v.start_time, scale) or nil
       end,
       edit = function(f)
         DurationInput.show {
           title = _("Start time"),
           value_sec = f.values.start_time,
+          scale = scale,
           on_ok = function(sec)
             f:set("start_time", sec)
           end,
@@ -106,7 +107,7 @@ local function edit_step(nav, method, step, on_done, on_remove, movers)
     },
   }
   for _, key in ipairs(method.steps.fields) do
-    fields[#fields + 1] = field_row(key)
+    fields[#fields + 1] = field_row(key, method.time_scale)
   end
 
   local actions = {
@@ -170,6 +171,7 @@ end
 function StepEditor:buildItems()
   local total_water = Derive.total_water(self.steps)
   local total_brew = self.draft.recipe.brew_time_sec
+  local scale = self.method and self.method.time_scale
   local items = {
     {
       text = "+ " .. _("Add step"),
@@ -182,13 +184,13 @@ function StepEditor:buildItems()
   for i, step in ipairs(self.steps) do
     local head = string.format("#%d", i)
     if step.start_time then
-      head = head .. "  " .. Format.duration(step.start_time)
+      head = head .. "  " .. Format.duration(step.start_time, scale)
     end
     head = head .. "  " .. Methods.step_label(step.step_type)
     local bits = {}
     local dur = Derive.duration(self.steps, i, total_brew)
     if dur and dur > 0 then
-      bits[#bits + 1] = Format.duration(dur)
+      bits[#bits + 1] = Format.duration(dur, scale)
     end
     if total_water[i] then
       bits[#bits + 1] = _("total ") .. Format.grams(total_water[i])

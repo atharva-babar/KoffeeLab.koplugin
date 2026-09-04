@@ -23,9 +23,9 @@ local function brewed_only(list)
   return out
 end
 
---- Most recently brewed recipes, newest first.
-function HomeService.recent_list(n)
-  return brewed_only(rows { sort = "recent", limit = n })
+--- Most recently saved recipes (created or edited), newest first.
+function HomeService.recently_saved_list(n)
+  return rows { sort = "updated", limit = n }
 end
 
 --- Recipes with the highest brew counts.
@@ -49,8 +49,8 @@ function HomeService.favourites_list(n)
   return rows { favorite = true, sort = "rating", limit = n }
 end
 
-function HomeService.recent()
-  return HomeService.recent_list(1)[1]
+function HomeService.recently_saved()
+  return HomeService.recently_saved_list(1)[1]
 end
 
 function HomeService.most_brewed()

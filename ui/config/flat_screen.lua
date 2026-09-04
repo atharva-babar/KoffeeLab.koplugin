@@ -24,7 +24,6 @@ function FlatScreen.define(cfg)
   local Screen = ListScreen:extend {
     name = cfg.name,
     title = cfg.title,
-    add_text = cfg.add_text or ("+ " .. _("Add") .. " " .. (cfg.singular or cfg.title)),
     empty_text = cfg.empty_text,
   }
   local single = is_single_text(cfg.fields)

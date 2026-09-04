@@ -24,32 +24,32 @@ local function to_num(v)
   return nil
 end
 
---- Integer seconds -> a compact duration string (§1.15):
----   165   -> "2:45"      (sub-hour, not a whole minute)
----   900   -> "15 min"    (whole minutes, sub-hour)
----   7200  -> "2 h"       (whole hours)
----   3660  -> "1:01:00"   (hours + remainder)
+--- Integer seconds -> a standardised clock string (§1.15). Every time value in
+--- the UI goes through here so the format is uniform — no "15 min" / "2 h" word
+--- forms.
+---   default ("ms" scale) — minutes:seconds, the norm for brew times and steps:
+---     45    -> "0:45"
+---     165   -> "2:45"
+---     900   -> "15:00"
+---     3660  -> "1:01:00"   (an hour or more rolls to h:mm:ss)
+---   "hm" scale — hours:minutes, for the long steeps Cold Brew needs:
+---     3660  -> "1:01"
+---     43200 -> "12:00"
 --- Returns nil for nil / negative / non-number input.
-function Format.duration(sec)
+function Format.duration(sec, scale)
   sec = to_num(sec)
   if sec == nil or sec < 0 then
     return nil
   end
   sec = math.floor(sec + 0.5)
-  if sec == 0 then
-    return "0:00"
+  if scale == "hm" then
+    local m = math.floor(sec / 60 + 0.5)
+    return string.format("%d:%02d", math.floor(m / 60), m % 60)
   end
   if sec >= 3600 then
-    if sec % 3600 == 0 then
-      return string.format("%d h", sec / 3600)
-    end
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
-    local s = sec % 60
-    return string.format("%d:%02d:%02d", h, m, s)
-  end
-  if sec % 60 == 0 then
-    return string.format("%d min", sec / 60)
+    return string.format("%d:%02d:%02d", h, m, sec % 60)
   end
   return string.format("%d:%02d", math.floor(sec / 60), sec % 60)
 end
@@ -171,9 +171,10 @@ end
 
 --- Parse free-text duration input into integer seconds (inverse of .duration).
 --- Accepts: "2:45", "1:02:03", "90" (bare = seconds), "15 min" / "15m",
---- "2 h" / "1.5h", "45 s" / "45s". Returns nil on anything unparseable or
---- negative.
-function Format.parse_duration(str)
+--- "2 h" / "1.5h", "45 s" / "45s". With `scale == "hm"` a two-part "H:MM" clock
+--- form is read as hours:minutes (so it round-trips .duration(sec, "hm")).
+--- Returns nil on anything unparseable or negative.
+function Format.parse_duration(str, scale)
   if type(str) ~= "string" then
     return nil
   end
@@ -195,6 +196,9 @@ function Format.parse_duration(str)
         return nil
       end
       total = total * 60 + n
+    end
+    if scale == "hm" and #parts == 2 then
+      total = total * 60 -- reinterpret the m:ss result as h:mm
     end
     return total
   end

@@ -26,7 +26,7 @@ return FlatScreen.define {
   title = _("Grinders"),
   singular = _("Grinder"),
   service = require("services/config_service").grinders,
-  empty_text = _("No grinders yet. Tap “+ Add Grinder”."),
+  empty_text = _("No grinders yet. Use the Add button below."),
   row = row,
   fields = {
     { key = "name", label = _("Name"), kind = "text", hint = _("e.g. Timemore C3S") },

@@ -11,7 +11,7 @@ return FlatScreen.define {
   title = _("Flavor Tags"),
   singular = _("Flavor Tag"),
   service = require("services/config_service").flavor_tags,
-  empty_text = _("No flavor tags yet. Tap “+ Add Flavor Tag”."),
+  empty_text = _("No flavor tags yet. Use the Add button below."),
   fields = {
     { key = "name", label = _("Name"), kind = "text", hint = _("e.g. Chocolate") },
   },

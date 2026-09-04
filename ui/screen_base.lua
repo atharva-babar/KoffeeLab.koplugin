@@ -14,10 +14,11 @@
 --
 -- The contextual bottom navbar (docs/design-language.md §3.7) is opt-in via the
 -- `navbar` field: a preset name ("list" | "detail_recipe" | "detail_drink" |
--- "wizard" | "home" | "index" | "configurator"), or an explicit item list. Generic
--- keys (home / index / configurator / add* / back) are handled here; the rest
--- (filter / sort / search / edit / delete / save / next / exit / brew_again /
--- favourite) dispatch to `self:onNavAction(key)`, which subclasses override.
+-- "wizard" | "home" | "index" | "configurator" | "config_list"), or an explicit
+-- item list. Generic keys (home / index / configurator / add / back / exit) are
+-- handled here; the rest (filter / sort / search / edit / delete / save / next /
+-- brew_again / favourite) dispatch to `self:onNavAction(key)`, which subclasses
+-- override. "add" routes through `self:onNavAdd()` (overridable).
 --
 -- Optional hook: `MyScreen:onCleanup()` is called once when the screen closes,
 -- for releasing resources (DB cursors, cached rows, …).
@@ -38,10 +39,13 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local Screen = Device.screen
 
 -- Contextual navbar item sets, keyed by preset name (design-language §3.7).
+-- Home / Index / Configurator share one 5-cell layout so the primary navigation
+-- never shifts under the reader.
 local NAVBARS = {
-  home = { "home", "add_recipe", "add_drink", "index", "configurator" },
-  index = { "home", "index", "add", "configurator" },
-  configurator = { "home", "index", "add", "configurator" },
+  home = { "home", "index", "add", "configurator", "exit" },
+  index = { "home", "index", "add", "configurator", "exit" },
+  configurator = { "home", "index", "add", "configurator", "exit" },
+  config_list = { "home", "add", "back" },
   list = { "home", "filter", "sort", "search", "back" },
   detail_recipe = { "home", "edit", "delete", "brew_again", "favourite" },
   detail_drink = { "home", "edit", "delete" },
@@ -208,16 +212,21 @@ function ScreenBase:_navSelect(key)
     Nav:reset(require("ui/home"):new {})
     Nav:push(require("ui/configurator"):new {})
   elseif key == "add" then
-    self:_navAdd()
-  elseif key == "add_recipe" then
-    require("ui/recipe/add_flow").start {}
-  elseif key == "add_drink" then
-    require("ui/drink/add_flow").start {}
+    self:onNavAdd()
+  elseif key == "exit" then
+    Nav:closeAll()
   elseif key == "back" then
     self:_goBack()
   else
     self:onNavAction(key)
   end
+end
+
+--- What the navbar "add" key does. The default is the Recipe / Custom Drink
+--- chooser (as on the Index screen); list screens that own a single "add" verb
+--- (the Configurator entities) override this to run their own `on_add`.
+function ScreenBase:onNavAdd()
+  self:_navAdd()
 end
 
 function ScreenBase:_navAdd()

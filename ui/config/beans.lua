@@ -24,7 +24,7 @@ return FlatScreen.define {
   title = _("Beans"),
   singular = _("Bean"),
   service = require("services/config_service").beans,
-  empty_text = _("No beans yet. Tap “+ Add Bean”."),
+  empty_text = _("No beans yet. Use the Add button below."),
   row = row,
   fields = {
     { key = "roaster_name", label = _("Roaster"), kind = "text", hint = _("e.g. Blue Tokai") },

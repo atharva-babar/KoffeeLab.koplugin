@@ -3,27 +3,28 @@ local Format = require("util/format")
 
 describe("util/format", function()
   describe("duration", function()
-    it("renders the §1.15 reference values", function()
-      assert.are.equal("15 min", Format.duration(900))
+    it("renders every sub-hour value as m:ss (no word forms)", function()
+      assert.are.equal("0:45", Format.duration(45))
       assert.are.equal("2:45", Format.duration(165))
-      assert.are.equal("2 h", Format.duration(7200))
-      assert.are.equal("12 h", Format.duration(43200))
-      assert.are.equal("24 h", Format.duration(86400))
-    end)
-
-    it("uses m:ss below an hour when not a whole minute", function()
       assert.are.equal("0:30", Format.duration(30))
       assert.are.equal("1:05", Format.duration(65))
+      assert.are.equal("1:00", Format.duration(60))
+      assert.are.equal("15:00", Format.duration(900))
+      assert.are.equal("59:00", Format.duration(3540))
     end)
 
-    it("uses N min for whole sub-hour minutes", function()
-      assert.are.equal("1 min", Format.duration(60))
-      assert.are.equal("59 min", Format.duration(3540))
-    end)
-
-    it("uses h:mm:ss for hours with a remainder", function()
+    it("rolls to h:mm:ss at an hour or more", function()
+      assert.are.equal("1:00:00", Format.duration(3600))
       assert.are.equal("1:01:00", Format.duration(3660))
       assert.are.equal("2:00:05", Format.duration(7205))
+    end)
+
+    it("renders the hm scale as h:mm for long steeps", function()
+      assert.are.equal("12:00", Format.duration(43200, "hm"))
+      assert.are.equal("24:00", Format.duration(86400, "hm"))
+      assert.are.equal("1:01", Format.duration(3660, "hm"))
+      assert.are.equal("0:01", Format.duration(45, "hm"))
+      assert.are.equal("0:00", Format.duration(0, "hm"))
     end)
 
     it("handles zero and rejects nil / negative", function()
@@ -115,6 +116,15 @@ describe("util/format", function()
     it("round-trips with duration for the reference values", function()
       for _, sec in ipairs { 165, 900, 7200, 43200, 86400 } do
         assert.are.equal(sec, Format.parse_duration(Format.duration(sec)))
+      end
+    end)
+
+    it("reads a two-part clock as h:mm under the hm scale", function()
+      assert.are.equal(43200, Format.parse_duration("12:00", "hm"))
+      assert.are.equal(5400, Format.parse_duration("1:30", "hm"))
+      assert.are.equal(3723, Format.parse_duration("1:02:03", "hm")) -- 3-part unaffected
+      for _, sec in ipairs { 2700, 43200, 86400 } do
+        assert.are.equal(sec, Format.parse_duration(Format.duration(sec, "hm"), "hm"))
       end
     end)
 

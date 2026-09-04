@@ -6,6 +6,7 @@ return {
   name = _("Cold Brew"),
   icon = "cold_brew",
   sort = 5,
+  time_scale = "hm", -- steep times are hours long: render/enter as H:MM, not M:SS
   fields = {
     dose = { required = true },
     water = { required = true, label = _("Total water") },

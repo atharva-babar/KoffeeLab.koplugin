@@ -44,27 +44,36 @@ describe("services/home_service", function()
   end)
 
   it("returns nil for every card on a fresh database", function()
-    assert.is_nil(HomeService.recent())
+    assert.is_nil(HomeService.recently_saved())
     assert.is_nil(HomeService.most_brewed())
     assert.is_nil(HomeService.top_rated())
     assert.are.equal(0, HomeService.favourites_count())
   end)
 
-  it("recent() is nil until a recipe has been brewed", function()
-    make_recipe("pour_over", ids)
-    assert.is_nil(HomeService.recent())
-    assert.is_nil(HomeService.most_brewed())
+  it("recently_saved() shows a recipe as soon as it is created, no brew needed", function()
+    make_recipe("pour_over", ids, { title = "Alpha" })
+    assert.are.equal("Alpha", HomeService.recently_saved().title)
+    assert.is_nil(HomeService.most_brewed()) -- still nothing brewed
   end)
 
-  it("recent() is the most recently brewed recipe", function()
+  it("recently_saved() orders by last save — a later edit moves a recipe to the top", function()
+    -- os.time() has 1 s resolution; drive it so created/updated stamps differ.
+    local Support = require("db/repo/support")
+    local clock, orig = 1000000, Support.now
+    Support.now = function()
+      clock = clock + 10
+      return clock
+    end
+    finally(function()
+      Support.now = orig
+    end)
+
     local a = make_recipe("pour_over", ids, { title = "Alpha" })
-    local b = make_recipe("espresso", ids, { title = "Bravo" })
-    assert(BrewService.record { recipe_id = a.id })
-    assert(BrewService.record { recipe_id = b.id })
-    local r = HomeService.recent()
-    assert.is_not_nil(r)
-    assert.are.equal("Bravo", r.title)
-    assert.are.equal("Espresso", r.method_name)
+    make_recipe("espresso", ids, { title = "Bravo" })
+    assert.are.equal("Bravo", HomeService.recently_saved().title) -- newest created
+
+    assert(RecipeService.set_favorite(a.id, true)) -- any write bumps updated_at
+    assert.are.equal("Alpha", HomeService.recently_saved().title) -- saved last
   end)
 
   it("most_brewed() ranks by brew count", function()

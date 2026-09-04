@@ -8,6 +8,7 @@
 --   DurationInput.show{
 --     title = _("Bloom time"),
 --     value_sec = 30,                 -- optional starting value
+--     scale = "hm",                   -- optional: "hm" for Cold Brew (H:MM)
 --     on_ok = function(seconds) ... end,
 --     on_cancel = function() ... end, -- optional
 --   }
@@ -22,12 +23,14 @@ local DurationInput = {}
 
 function DurationInput.show(opts)
   assert(type(opts.on_ok) == "function", "DurationInput needs on_ok")
+  local hm = opts.scale == "hm"
   local dialog
   dialog = InputDialog:new {
     title = opts.title or _("Enter a duration"),
-    description = _("e.g. 2:45, 90 (seconds), 15 min, 2 h"),
-    input = opts.value_sec and Format.duration(opts.value_sec) or "",
-    input_hint = "2:45",
+    description = hm and _("e.g. 8:00 (h:mm), 12 h, 90 min")
+      or _("e.g. 2:45, 90 (seconds), 15 min, 2 h"),
+    input = opts.value_sec and Format.duration(opts.value_sec, opts.scale) or "",
+    input_hint = hm and "8:00" or "2:45",
     buttons = {
       {
         {
@@ -45,10 +48,11 @@ function DurationInput.show(opts)
           is_enter_default = true,
           callback = function()
             local text = dialog:getInputText()
-            local seconds = Format.parse_duration(text)
+            local seconds = Format.parse_duration(text, opts.scale)
             if seconds == nil then
               UIManager:show(InfoMessage:new {
-                text = _("Not a valid duration. Try 2:45, 90, 15 min or 2 h."),
+                text = hm and _("Not a valid duration. Try 8:00, 12 h or 90 min.")
+                  or _("Not a valid duration. Try 2:45, 90, 15 min or 2 h."),
               })
               return
             end
